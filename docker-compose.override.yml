@@ -1,0 +1,22 @@
+# Local dev overrides — applied automatically by `docker compose up`.
+# Mounts source for live reload and runs uvicorn with --reload.
+services:
+  core_api:
+    build:
+      target: base
+    volumes:
+      - ./src:/app/src
+    environment:
+      APP_ENV: local
+      DEBUG: "true"
+      LOG_TO_FILE: "false"
+    # Override the production entrypoint with reload for dev.
+    entrypoint: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/src"]
+
+  postgres:
+    ports:
+      - "5432:5432"   # expose for local psql / tools
+
+  phoenix:
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data

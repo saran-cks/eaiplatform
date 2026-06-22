@@ -1,0 +1,92 @@
+"""Dependency injection — the ONLY place concrete adapters are bound to ports.
+
+Each provider returns the adapter implementing one port. Until an adapter is built
+its provider raises ``AdapterNotWired`` (real, explicit behaviour — not a placeholder)
+naming the session that delivers it. When you implement an adapter, replace the single
+raise with the construction line, e.g.::
+
+    @cached_property
+    def store(self) -> StorePort:
+        from adapters.store.postgres import PostgresAdapter
+        return PostgresAdapter(self._settings)
+
+Nothing else in the codebase may import adapters. Routes/use-cases receive ports
+from this container only.
+"""
+
+from __future__ import annotations
+
+from functools import cached_property
+
+from config.settings import Settings, get_settings
+from core.ports.agent import AgentPort
+from core.ports.cache import CachePort
+from core.ports.llm import LLMPort
+from core.ports.mcp_connector import MCPConnectorPort
+from core.ports.observability import ObservabilityPort
+from core.ports.queue import QueuePort
+from core.ports.retriever import RetrieverPort
+from core.ports.store import StorePort
+
+
+class AdapterNotWired(NotImplementedError):
+    """Raised when a port is requested before its adapter has been implemented/bound."""
+
+
+class Container:
+    """Holds settings and lazily constructs one adapter per port (singleton per container)."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+
+    # --- storage (Session 3) ---
+    @cached_property
+    def store(self) -> StorePort:
+        raise AdapterNotWired("StorePort — adapters/store/postgres.py (Session 3, build step 6)")
+
+    @cached_property
+    def cache(self) -> CachePort:
+        raise AdapterNotWired("CachePort — adapters/cache/valkey.py (Session 3, build step 6)")
+
+    # --- retrieval (Session 4) ---
+    @cached_property
+    def retriever(self) -> RetrieverPort:
+        raise AdapterNotWired("RetrieverPort — adapters/retriever/qdrant.py (Session 4, step 7)")
+
+    # --- chat (Session 5) ---
+    @cached_property
+    def llm(self) -> LLMPort:
+        raise AdapterNotWired("LLMPort — adapters/llm/bedrock.py (Session 5, build step 8)")
+
+    # --- agent (Session 6) ---
+    @cached_property
+    def agent(self) -> AgentPort:
+        raise AdapterNotWired(
+            "AgentPort — adapters/agent/llamaindex_runner.py (Session 6, build step 9)"
+        )
+
+    # --- MCP (Session 7) ---
+    @cached_property
+    def mcp(self) -> MCPConnectorPort:
+        raise AdapterNotWired("MCPConnectorPort — adapters/mcp/connector.py (Session 7, step 10)")
+
+    # --- observability (Session 8) ---
+    @cached_property
+    def observability(self) -> ObservabilityPort:
+        raise AdapterNotWired(
+            "ObservabilityPort — adapters/observability/phoenix/ (Session 8, build step 11)"
+        )
+
+    # --- queue (Session 3+) ---
+    @cached_property
+    def queue(self) -> QueuePort:
+        raise AdapterNotWired("QueuePort — adapters/queue/arq.py (build step: ingestion)")
+
+
+def build_container(settings: Settings | None = None) -> Container:
+    """Construct the application container. Call once at startup; pass via FastAPI state."""
+    return Container(settings or get_settings())

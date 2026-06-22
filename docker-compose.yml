@@ -1,0 +1,103 @@
+name: core-api
+
+services:
+  core_api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      model_server:
+        condition: service_started   # user image; switch to service_healthy once it exposes one
+      phoenix:
+        condition: service_started
+      guard_gateway:
+        condition: service_started
+    restart: unless-stopped
+    networks: [core]
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # Assumes curl in image; if absent, set core_api depends_on -> service_started.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [core]
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "6006:6006"   # UI
+      - "4317:4317"   # OTLP gRPC
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6006/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [core]
+
+  model_server:
+    # FUTURE/EXTERNAL: replace with your bge-m3 + reranker gRPC image.
+    image: your-model-server-image
+    ports:
+      - "50051:50051"
+    networks: [core]
+
+  guard_gateway:
+    # FUTURE/EXTERNAL: replace with your Prompt Guard 86M HTTP image.
+    image: your-guard-image
+    ports:
+      - "8001:8001"
+    networks: [core]
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [core]
+
+  valkey:
+    image: valkey/valkey:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [core]
+
+networks:
+  core:
+    driver: bridge
+
+volumes:
+  qdrant_data:
+  postgres_data:
+  valkey_data:
