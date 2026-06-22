@@ -1,6 +1,6 @@
 """AgentPort — ReAct agent lifecycle and tool dispatch.
 
-The LlamaIndex AgentRunner adapter implements this. Tools are MCP-backed and registered
+The LangGraph adapter implements this. Tools are MCP-backed and registered
 filtered by PermissionScope at session creation. Code generation output is streamed for
 Monaco display; sandbox execution is FUTURE. Events are emitted as a stream for SSE.
 """

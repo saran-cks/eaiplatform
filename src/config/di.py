@@ -66,7 +66,7 @@ class Container:
     @cached_property
     def agent(self) -> AgentPort:
         raise AdapterNotWired(
-            "AgentPort — adapters/agent/llamaindex_runner.py (Session 6, build step 9)"
+            "AgentPort — adapters/agent/langgraph_runner.py (Session 6, build step 9)"
         )
 
     # --- MCP (Session 7) ---

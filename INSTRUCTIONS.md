@@ -4,15 +4,17 @@ Read this before touching code. It explains *why* the project is shaped the way 
 For the task list and session log, see `PLAN.md`. This file is the architecture + logic.
 
 ## What this is
-Backend for an enterprise AI platform. Three product capabilities:
-1. **Permission-scoped knowledge retrieval (RAG)** — chunk-level permissions enforced at the
-   Qdrant payload level *before* retrieval (pre-LLM). Not a post-filter.
-2. **Autonomous ticket/agent intelligence** — ReAct agents, read-only now (write actions FUTURE).
-3. **AI code generation** — output displayed in a Monaco editor UI. Sandbox execution + CLI are FUTURE.
+Backend for an enterprise AI platform structured around four core use cases across two categories:
 
-External systems (ServiceNow, GitHub, Confluence, Zendesk) connect via **MCP**. The system is
-**A2A** (agent-to-agent) compatible for future research swarms. The **ingestion worker is a
-separate fat service** — we do NOT ingest here; we only retrieve from Qdrant.
+### 1. Chat Interface
+*   **1a. Real-Time Project Check (Current)**: Spawns a dedicated agent to connect to systems and check logs/status in real time via MCP. Bypasses Qdrant retrieval.
+*   **1b. Incident Resolution (Current/Future)**: Uses Qdrant RAG (with permissions) to understand context, spawns specialized subagents to query logs/APIs/GitHub, and returns a step-by-step resolution. Live action execution is a FUTURE extension requiring human-in-the-loop approval.
+
+### 2. Code Assist
+*   **2a. Monaco UI Editor (Current)**: Suggests and highlights code fixes in a Monaco-based UI.
+*   **2b. Typer CLI (Current/Future)**: Integrated live to the app for developer CLI utilities. Sandbox execution of generated code is a FUTURE extension.
+
+The ingestion worker is a separate fat service (we only retrieve from Qdrant). External connections use MCP. A2A-compatible.
 
 ## Non-negotiable architecture: hexagonal (ports & adapters)
 Dependencies point inward. The domain knows nothing about FastAPI, Qdrant, Bedrock, etc.
@@ -37,7 +39,7 @@ config/di.py wires adapters → ports.   config/settings.py = all env.
 - `core/domain/value_objects/` — frozen dataclasses (PermissionScope, EmbeddingVector, RetrievalResult). Immutable, hashable.
 - `core/ports/` — `typing.Protocol`, `@runtime_checkable`, async. 8 ports: llm, retriever, agent, cache, store, queue, observability, mcp_connector.
 - `core/use_cases/` — orchestration only; depends on ports.
-- `adapters/` — bedrock (llm), qdrant + model_server gRPC (retriever), llamaindex_runner + a2a (agent), valkey (cache), postgres (store), arq (queue), phoenix (observability), mcp/.
+- `adapters/` — bedrock (llm), qdrant + model_server gRPC (retriever), langgraph_runner + a2a (agent), valkey (cache), postgres (store), arq (queue), phoenix (observability), mcp/.
 - `api/` — middleware (auth, telemetry), routes, schemas.
 - `observability/` — otel init, typed span builders, metrics, drift logic.
 - `daemon/` — background asyncio tasks (process_manager, agent_reaper, session_cleanup, health_watchdog).
@@ -46,7 +48,7 @@ config/di.py wires adapters → ports.   config/settings.py = all env.
 ## Tech + conventions
 - Python 3.12, FastAPI, **asyncio everywhere — zero blocking calls on the event loop**.
 - asyncpg (not SQLAlchemy sync) · redis.asyncio for Valkey · async gRPC for model server · httpx async.
-- LlamaIndex QueryPipeline (RAG) + AgentRunner (ReAct). AWS Bedrock (Claude) SSE streaming.
+- Native Qdrant Client (RAG) + LangGraph (ReAct agent & state workflows). AWS Bedrock (Claude) SSE streaming.
 - Qdrant hybrid dense+sparse + RRF. pydantic v2 schemas. pydantic-settings v2 config. ARQ on Valkey.
 - OpenTelemetry → Phoenix (OTLP gRPC :4317). pytest + pytest-asyncio; locust + py-spy later.
 - uv for deps. Everything typed (mypy strict), ruff-clean, async, independently testable.
@@ -80,7 +82,7 @@ evals (retrieval quality + LLM faithfulness/relevance), dataset curation from re
 back through `ObservabilityPort` so Phoenix is swappable by adapter only. `/feedback/{turn_id}`
 writes Postgres AND emits an eval span.
 
-## FUTURE EXTENSION (stub + mark, don't build): vllm llm, sqs queue, langgraph/swarm runners,
+## FUTURE EXTENSION (stub + mark, don't build): vllm llm, sqs queue, llamaindex_runner, swarm_runner,
 a2a swarm_coordinator, E2B sandbox exec, CLI transport, MCP write actions (ServiceNow/GitHub/Zendesk).
 
 ## Working rules for agents

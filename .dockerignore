@@ -1,0 +1,39 @@
+# Git
+.git
+.github
+.gitignore
+
+# Python/Environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+env
+ENV
+.env
+.env.*
+!.env.example
+
+# IDEs
+.vscode
+.idea
+
+# Build/Dev tools
+.mypy_cache
+.ruff_cache
+.pytest_cache
+tests/
+tests_pre/
+docs/
+logs/
+*.log
+
+# Docker config
+docker-compose*.yml
+docker/
+Dockerfile
+.dockerignore
+pyproject.toml
+uv.lock

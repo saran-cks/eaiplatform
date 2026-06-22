@@ -37,15 +37,15 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] All `core/domain/entities/` (session, message, chunk, document, job)
 - [x] All `core/domain/value_objects/` (permission_scope, embedding_vector, retrieval_result)
 
-### Session 2 — Step 5: first runnable slice
-- [ ] `api/main.py` app factory + lifespan (start/stop daemon tasks)
-- [ ] `api/middleware/auth.py` (HS256 decode → PermissionScope → request.state)
-- [ ] `api/middleware/telemetry.py` (OTel span per request)
-- [ ] `api/routes/health.py` (`/health` liveness, `/ready` readiness)
-- [ ] `api/schemas/health.py`
-- [ ] `daemon/` skeleton: process_manager, agent_reaper, session_cleanup, health_watchdog
-- [ ] `observability/otel.py` minimal tracer/meter init
-- [ ] Wire DI for whatever the slice needs; `docker compose up` → `/health` 200
+### Session 2 — Step 5: first runnable slice  ✅ DONE
+- [x] `api/main.py` app factory + lifespan (start/stop daemon tasks)
+- [x] `api/middleware/auth.py` (HS256 decode -> PermissionScope -> request.state)
+- [x] `api/middleware/telemetry.py` (OTel span per request)
+- [x] `api/routes/health.py` (`/health` liveness, `/ready` readiness)
+- [x] `api/schemas/health.py`
+- [x] `daemon/` skeleton: process_manager, agent_reaper, session_cleanup, health_watchdog
+- [x] `observability/otel.py` minimal tracer/meter init
+- [x] Wire DI for whatever the slice needs; `uvicorn api.main:create_app --factory` -> `/health` 200
 
 ### Session 3 — Step 6: storage layer
 - [ ] `adapters/store/postgres.py` (asyncpg pool) + all `models/`
@@ -66,9 +66,9 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [ ] `api/routes/chat.py` (SSE) + schema
 
 ### Session 6 — Step 9: agent pipeline + A2A
-- [ ] `adapters/agent/llamaindex_runner.py`, `lifecycle_manager.py`
+- [ ] `adapters/agent/langgraph_runner.py`, `lifecycle_manager.py`
 - [ ] `adapters/agent/a2a/{protocol,registry}.py`; `swarm_coordinator.py` FUTURE stub
-- [ ] `langgraph_runner.py`, `swarm_runner.py` FUTURE stubs
+- [ ] `llamaindex_runner.py` (optional), `swarm_runner.py` FUTURE stubs
 - [ ] `core/use_cases/agent/{run_agent,manage_artifacts,lifecycle}.py`
 - [ ] `api/routes/agent.py` (SSE) + schema
 
