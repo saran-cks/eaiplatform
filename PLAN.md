@@ -53,12 +53,12 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] SQL schema / migrations bootstrap (automatic on pool initialization)
 - [x] DI bindings for StorePort + CachePort
 
-### Session 4 — Step 7: retrieval layer
-- [ ] `adapters/retriever/qdrant.py` (hybrid dense+sparse, RRF, payload permission filter)
-- [ ] `adapters/retriever/model_server/embed_client.py` (async gRPC → bge-m3)
-- [ ] `adapters/retriever/model_server/rerank_client.py` (deferred impl, contract only)
-- [ ] `core/use_cases/retrieval/search_chunks.py`
-- [ ] `api/routes/search.py` + schema (authenticated, scope-filtered)
+### Session 4 — Step 7: retrieval layer  ✅ DONE
+- [x] `adapters/retriever/qdrant.py` (hybrid dense+sparse, RRF, payload permission filter)
+- [x] `adapters/retriever/model_server/embed_client.py` (async gRPC → bge-m3)
+- [x] `adapters/retriever/model_server/rerank_client.py` (deferred impl, contract only)
+- [x] `core/use_cases/retrieval/search_chunks.py`
+- [x] `api/routes/search.py` + schema (authenticated, scope-filtered)
 
 ### Session 5 — Step 8: chat pipeline
 - [ ] `adapters/llm/bedrock.py` (async SSE stream) + `vllm.py` FUTURE stub

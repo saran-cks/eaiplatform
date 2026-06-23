@@ -142,3 +142,6 @@ conda-meta/
 # Local logs
 logs/
 *.log
+
+# Project session archive
+archive.md

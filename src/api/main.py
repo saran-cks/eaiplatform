@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from api.middleware.auth import AuthMiddleware
 from api.middleware.telemetry import TelemetryMiddleware
 from api.routes.health import router as health_router
+from api.routes.search import router as search_router
 from config.di import build_container
 from config.settings import Settings, get_settings
 from daemon.tasks import start_daemons, stop_daemons
@@ -81,6 +82,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     await stop_daemons()
     shutdown_otel()
 
+    # Gracefully close active database pools and gRPC channels
+    container = app.state.container
+    if "store" in container.__dict__:
+        try:
+            await container.store.close()
+        except Exception as exc:
+            logger.warning("Error closing store adapter: %s", exc)
+
+    if "retriever" in container.__dict__:
+        try:
+            await container.retriever.close()
+        except Exception as exc:
+            logger.warning("Error closing retriever adapter: %s", exc)
+
     logger.info("%s stopped", settings.app_name)
 
 
@@ -116,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # --- Routes ---
     app.include_router(health_router)
+    app.include_router(search_router)
 
     return app
 

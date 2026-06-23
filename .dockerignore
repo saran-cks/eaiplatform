@@ -37,3 +37,6 @@ Dockerfile
 .dockerignore
 pyproject.toml
 uv.lock
+
+# Session Archive
+archive.md

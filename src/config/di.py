@@ -57,7 +57,8 @@ class Container:
     # --- retrieval (Session 4) ---
     @cached_property
     def retriever(self) -> RetrieverPort:
-        raise AdapterNotWired("RetrieverPort — adapters/retriever/qdrant.py (Session 4, step 7)")
+        from adapters.retriever.qdrant import QdrantRetrieverAdapter
+        return QdrantRetrieverAdapter(self._settings)
 
     # --- chat (Session 5) ---
     @cached_property
