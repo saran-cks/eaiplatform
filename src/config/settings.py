@@ -85,6 +85,7 @@ class Settings(BaseSettings):
     aws_region: str = Field("us-east-1", alias="AWS_REGION")
     aws_access_key_id: str = Field("", alias="AWS_ACCESS_KEY_ID")
     aws_secret_access_key: str = Field("", alias="AWS_SECRET_ACCESS_KEY")
+    aws_session_token: str = Field("", alias="AWS_SESSION_TOKEN")
     bedrock_model_id: str = Field("anthropic.claude-sonnet-4-6", alias="BEDROCK_MODEL_ID")
     bedrock_fast_model_id: str = Field(
         "anthropic.claude-haiku-4-5-20251001", alias="BEDROCK_FAST_MODEL_ID"

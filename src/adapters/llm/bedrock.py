@@ -73,6 +73,7 @@ class BedrockAdapter:
             "region_name": s.aws_region,
             "aws_access_key_id": s.aws_access_key_id or None,
             "aws_secret_access_key": s.aws_secret_access_key or None,
+            "aws_session_token": s.aws_session_token or None,
         }
 
     # ------------------------------------------------------------------
