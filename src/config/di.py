@@ -46,11 +46,13 @@ class Container:
     # --- storage (Session 3) ---
     @cached_property
     def store(self) -> StorePort:
-        raise AdapterNotWired("StorePort — adapters/store/postgres.py (Session 3, build step 6)")
+        from adapters.store.postgres import PostgresAdapter
+        return PostgresAdapter(self._settings)
 
     @cached_property
     def cache(self) -> CachePort:
-        raise AdapterNotWired("CachePort — adapters/cache/valkey.py (Session 3, build step 6)")
+        from adapters.cache.valkey import ValkeyAdapter
+        return ValkeyAdapter(self._settings)
 
     # --- retrieval (Session 4) ---
     @cached_property

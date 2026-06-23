@@ -25,7 +25,7 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 
 ## Task checklist
 
-### Session 1 — Steps 1–4 (foundation + contracts)  ← CURRENT
+### Session 1 — Steps 1–4 (foundation + contracts)  ← DONE
 - [x] `pyproject.toml` (uv, py3.12, pinned deps), tooling config (ruff/mypy/pytest)
 - [x] `config/settings.py` — pydantic-settings v2, all env vars grouped
 - [x] `config/di.py` — Container skeleton, one provider per port (raises until adapter wired)
@@ -47,11 +47,11 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `observability/otel.py` minimal tracer/meter init
 - [x] Wire DI for whatever the slice needs; `uvicorn api.main:create_app --factory` -> `/health` 200
 
-### Session 3 — Step 6: storage layer
-- [ ] `adapters/store/postgres.py` (asyncpg pool) + all `models/`
-- [ ] `adapters/cache/valkey.py` (response/chunk/session namespaces)
-- [ ] SQL schema / migrations bootstrap
-- [ ] DI bindings for StorePort + CachePort
+### Session 3 — Step 6: storage layer  ✅ DONE
+- [x] `adapters/store/postgres.py` (asyncpg pool) + all database mapping tables
+- [x] `adapters/cache/valkey.py` (response/chunk/session namespaces)
+- [x] SQL schema / migrations bootstrap (automatic on pool initialization)
+- [x] DI bindings for StorePort + CachePort
 
 ### Session 4 — Step 7: retrieval layer
 - [ ] `adapters/retriever/qdrant.py` (hybrid dense+sparse, RRF, payload permission filter)

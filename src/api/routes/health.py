@@ -49,24 +49,30 @@ async def ready(request: Request, response: Response) -> ReadinessResponse:
 
     # --- Postgres probe ---
     try:
-        import asyncpg
-
-        conn = await asyncpg.connect(dsn=settings.postgres_dsn, timeout=1)
-        await conn.execute("SELECT 1")
-        await conn.close()
-        checks.append(ServiceCheck(name="postgres", ok=True, detail="connected"))
+        store = request.app.state.container.store
+        ok = await store.healthcheck()
+        checks.append(ServiceCheck(
+            name="postgres",
+            ok=ok,
+            detail="connected" if ok else "healthcheck failed"
+        ))
     except Exception as exc:
         logger.warning("Readiness: postgres unreachable: %s", exc)
         checks.append(ServiceCheck(name="postgres", ok=False, detail=str(exc)))
 
     # --- Valkey probe ---
     try:
-        import redis.asyncio as aioredis
-
-        r = aioredis.from_url(settings.valkey_url, socket_connect_timeout=1)
-        await r.ping()
-        await r.aclose()
-        checks.append(ServiceCheck(name="valkey", ok=True, detail="connected"))
+        cache = request.app.state.container.cache
+        if hasattr(cache, "ping"):
+            ok = await cache.ping()
+        else:
+            await cache.get("healthcheck_probe")
+            ok = True
+        checks.append(ServiceCheck(
+            name="valkey",
+            ok=ok,
+            detail="connected" if ok else "ping failed"
+        ))
     except Exception as exc:
         logger.warning("Readiness: valkey unreachable: %s", exc)
         checks.append(ServiceCheck(name="valkey", ok=False, detail=str(exc)))
