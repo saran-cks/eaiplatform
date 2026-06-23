@@ -60,10 +60,10 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `core/use_cases/retrieval/search_chunks.py`
 - [x] `api/routes/search.py` + schema (authenticated, scope-filtered)
 
-### Session 5 — Step 8: chat pipeline
-- [ ] `adapters/llm/bedrock.py` (async SSE stream) + `vllm.py` FUTURE stub
-- [ ] `core/use_cases/chat/send_message.py` (full RAG order), `manage_session.py`
-- [ ] `api/routes/chat.py` (SSE) + schema
+### Session 5 — Step 8: chat pipeline  ✅ DONE
+- [x] `adapters/llm/bedrock.py` (async SSE stream) + `vllm.py` FUTURE stub
+- [x] `core/use_cases/chat/send_message.py` (full RAG order), `manage_session.py`
+- [x] `api/routes/chat.py` (SSE) + schema
 
 ### Session 6 — Step 9: agent pipeline + A2A
 - [ ] `adapters/agent/langgraph_runner.py`, `lifecycle_manager.py`
