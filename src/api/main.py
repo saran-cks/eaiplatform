@@ -19,6 +19,7 @@ from fastapi import FastAPI
 
 from api.middleware.auth import AuthMiddleware
 from api.middleware.telemetry import TelemetryMiddleware
+from api.routes.chat import router as chat_router
 from api.routes.health import router as health_router
 from api.routes.search import router as search_router
 from config.di import build_container
@@ -132,6 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Routes ---
     app.include_router(health_router)
     app.include_router(search_router)
+    app.include_router(chat_router)
 
     return app
 

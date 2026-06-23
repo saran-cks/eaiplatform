@@ -63,7 +63,8 @@ class Container:
     # --- chat (Session 5) ---
     @cached_property
     def llm(self) -> LLMPort:
-        raise AdapterNotWired("LLMPort — adapters/llm/bedrock.py (Session 5, build step 8)")
+        from adapters.llm.bedrock import BedrockAdapter
+        return BedrockAdapter(self._settings)
 
     # --- agent (Session 6) ---
     @cached_property
