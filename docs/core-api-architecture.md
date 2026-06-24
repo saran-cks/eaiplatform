@@ -73,6 +73,8 @@ register in lifecycle_manager, run ReAct loop (tools via MCP registry, scope-che
 Monaco; each step SSE). On done → completed + deregister. On interrupt → graceful, interrupted.
 `agent_reaper` daemon kills TTL-exceeded/orphaned agents. All agents expose A2A interfaces even solo.
 
+> **Agent retrieval — IMPLEMENT LATER.** If an agent needs **semantic** data from Qdrant, it MUST embed its query through the **same embedding sidecar** the chat path uses (via `RetrieverPort` / the gRPC embed client) — never a second embedding model, never raw vectors. Vector search = embed-then-ANN, so there is no semantic retrieval without embedding. Only **exact/filter lookups** (by `tenant_id`/`permissions`/`ticket_id`/`doc_id`) skip embedding — use Qdrant payload filter or Postgres for those. The agent's ReAct loop should expose retrieval as a scope-checked **tool** that reuses the chat retrieval use-case; this tool is not built yet — wire it when agent tools land. See `docs/design-decisions.md`.
+
 **Valkey namespaces (never mixed):** `response:{hash}` 1h (disabled for /agent), `chunk:{id}` 24h,
 `session:{id}` 2h sliding.
 

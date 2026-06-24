@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+// Canonical contract between the Core API retriever adapter (gRPC client) and
+// the embedding sidecar (gRPC server). Single source of truth — regenerate
+// stubs into both sides from this file; never hand-edit generated code.
+
+package embedding;
+
+service EmbeddingService {
+  rpc GetEmbedding (EmbeddingRequest) returns (EmbeddingResponse);
+}
+
+message EmbeddingRequest {
+  string text = 1;
+}
+
+message SparseVector {
+  repeated int32 indices = 1;
+  repeated float values = 2;
+}
+
+message EmbeddingResponse {
+  repeated float dense = 1;
+  SparseVector sparse = 2;
+}
