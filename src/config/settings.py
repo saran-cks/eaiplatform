@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     # --- Agent lifecycle ---
     agent_session_ttl_seconds: int = Field(1800, alias="AGENT_SESSION_TTL_SECONDS")
     agent_max_iterations: int = Field(12, alias="AGENT_MAX_ITERATIONS")
+    agent_max_concurrency: int = Field(4, alias="AGENT_MAX_CONCURRENCY")
 
     # --- A2A interop ---
     a2a_enabled: bool = Field(True, alias="A2A_ENABLED")

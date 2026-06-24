@@ -69,9 +69,10 @@ class Container:
     # --- agent (Session 6) ---
     @cached_property
     def agent(self) -> AgentPort:
-        raise AdapterNotWired(
-            "AgentPort — adapters/agent/langgraph_runner.py (Session 6, build step 9)"
-        )
+        from adapters.agent.langgraph_runner import LangGraphRunner
+        from adapters.agent.a2a.registry import PeerRegistry
+        registry = PeerRegistry()
+        return LangGraphRunner(self._settings, self.llm, peer_registry=registry)
 
     # --- MCP (Session 7) ---
     @cached_property

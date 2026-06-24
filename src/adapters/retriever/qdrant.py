@@ -117,22 +117,14 @@ class QdrantRetrieverAdapter(RetrieverPort):
             )
         ]
 
-        # Permissions constraint: document must have at least one allowed role matching user permissions
-        if scope.permissions:
-            must_conditions.append(
-                models.FieldCondition(
-                    key="permissions",
-                    match=models.MatchAny(any=list(scope.permissions)),
-                )
+        # Permissions constraint: document must have at least one allowed role matching user permissions, or be tagged as public
+        allowed_perms = list(scope.permissions) + ["public"]
+        must_conditions.append(
+            models.FieldCondition(
+                key="permissions",
+                match=models.MatchAny(any=allowed_perms),
             )
-        else:
-            # Force empty fallback so no data matches permissions
-            must_conditions.append(
-                models.FieldCondition(
-                    key="permissions",
-                    match=models.MatchValue(value="__no_permissions_assigned__"),
-                )
-            )
+        )
 
         # Merge additional custom filters (e.g. source, status) if passed
         if filters:

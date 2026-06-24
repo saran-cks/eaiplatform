@@ -65,12 +65,11 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `core/use_cases/chat/send_message.py` (full RAG order), `manage_session.py`
 - [x] `api/routes/chat.py` (SSE) + schema
 
-### Session 6 — Step 9: agent pipeline + A2A
-- [ ] `adapters/agent/langgraph_runner.py`, `lifecycle_manager.py`
-- [ ] `adapters/agent/a2a/{protocol,registry}.py`; `swarm_coordinator.py` FUTURE stub
-- [ ] `llamaindex_runner.py` (optional), `swarm_runner.py` FUTURE stubs
-- [ ] `core/use_cases/agent/{run_agent,manage_artifacts,lifecycle}.py`
-- [ ] `api/routes/agent.py` (SSE) + schema
+### Session 6 — Step 9: agent pipeline + A2A  ✅ DONE
+- [x] `adapters/agent/langgraph_runner.py`, `lifecycle_manager.py` (Registry & interruption)
+- [x] `adapters/agent/a2a/{protocol,registry}.py`; `swarm_coordinator.py` FUTURE stub
+- [x] `core/use_cases/agent/{run_agent,manage_artifacts}.py`
+- [x] `api/routes/agent.py` (SSE) + schema
 
 ### Session 7 — Step 10: MCP layer
 - [ ] `adapters/mcp/{registry,connector}.py`, `tools/base.py`
@@ -87,7 +86,7 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [ ] `api/routes/dashboard.py` (SSE drilldown, rate-limited) + schema
 
 ### Session 10 — Steps 13–14: tests + logging
-- [ ] `tests/{unit,integration,e2e,profiling}` skeletons
+- [/] `tests/unit` skeletons and RAG security tests initialized (Session 10 checklist)
 - [ ] File-based logging with stdout flag (`LOG_TO_FILE`) for CloudWatch switch
 
 ### Deferred queue/llm backends (any time)

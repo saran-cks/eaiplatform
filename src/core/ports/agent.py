@@ -23,7 +23,12 @@ class AgentPort(Protocol):
         prompt: str,
         scope: PermissionScope,
     ) -> AsyncIterator[Mapping[str, Any]]:
-        """Run the ReAct loop; yields step events (thought/tool/observation/output) for SSE."""
+        """Run the ReAct loop; yields step events for SSE.
+        
+        Yielded events are dictionary mappings containing at least:
+          - "event": One of "thought", "worker_start", "worker_done", "synthesis", "output", "error", "done".
+          - "data": The data payload mapping.
+        """
         ...
 
     async def register_tool(self, *, agent_session_id: str, tool_name: str) -> None:
