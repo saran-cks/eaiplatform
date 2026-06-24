@@ -1,3 +1,6 @@
+<!-- SCOPE BANNER — read first -->
+> **SCOPE — CORE API ONLY.** This is the build plan / session checklist for ONLY the always-on FastAPI **Core API** (`src/`). It does **NOT** track the embedding sidecar (`sidecars/model_server/`), the Prompt Guard sidecar (`sidecars/prompt_guard/`), or the separately-deployed **Ingestion Worker** (`ingestion_worker/`) — those are independent deployables with their own plans. The **only** shared surface is **Qdrant, Postgres, Valkey, and Phoenix**.
+
 # Enterprise AI Platform — Core API — Build Plan
 
 Hexagonal (ports & adapters) FastAPI backend: permission-scoped RAG retrieval over

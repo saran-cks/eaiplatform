@@ -1,4 +1,7 @@
-# INSTRUCTIONS — for AI code agents working on this repo
+<!-- SCOPE BANNER — read first -->
+> **SCOPE — CORE API ONLY.** This document describes ONLY the always-on FastAPI **Core API** (`src/`) — its hexagonal architecture, flow logic, and invariants. It does **NOT** cover the embedding sidecar (`sidecars/model_server/`), the Prompt Guard sidecar (`sidecars/prompt_guard/`), or the separately-deployed **Ingestion Worker** (`ingestion_worker/`). Those are independent deployables, each documented separately. The **only** surface shared across all of them is **Qdrant, Postgres, Valkey, and Phoenix** — and the Qdrant collection + payload schema is the frozen contract between this app (reader) and the Ingestion Worker (writer).
+
+# INSTRUCTIONS — Core API architecture & logic (for AI code agents working on this repo)
 
 Read this before touching code. It explains *why* the project is shaped the way it is.
 For the task list and session log, see `PLAN.md`. This file is the architecture + logic.
