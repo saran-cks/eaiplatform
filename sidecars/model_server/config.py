@@ -20,11 +20,16 @@ def _env(name: str, default: str) -> str:
 class Config:
     model_name: str = _env("EMBED_MODEL_NAME", "BAAI/bge-m3")
     models_dir: Path = Path(_env("EMBED_MODELS_DIR", str(_HERE / "models")))
+    backend: str = _env("EMBED_BACKEND", "flag")                 # "flag" (FP32 ref) | "onnx" (int8)
     grpc_port: int = int(_env("GRPC_PORT", "50051"))
     max_workers: int = int(_env("EMBED_MAX_WORKERS", "4"))        # concurrent inferences
     intra_op_threads: int = int(_env("EMBED_INTRA_OP_THREADS", "4"))  # benched sweet spot; >4 regresses
     max_seq_len: int = int(_env("EMBED_MAX_SEQ_LEN", "512"))      # queries are short
     use_fp16: bool = _env("EMBED_USE_FP16", "false").lower() == "true"
+
+    @property
+    def onnx_model_path(self) -> Path:                           # int8 artifact (EMBED_BACKEND=onnx)
+        return Path(_env("EMBED_ONNX_PATH", str(self.models_dir / "bge-m3-int8.onnx")))
 
 
 config = Config()

@@ -62,16 +62,17 @@ sidecars/model_server/
 6. **Only now**: `Dockerfile`, wire into root `docker-compose.yml`, bring Docker back up **once** for the end-to-end test (Core API container → gRPC → this sidecar).
 
 ## Checklist
-- [ ] Scaffold `sidecars/model_server/` + `pyproject.toml` (own deps)
-- [ ] `proto/` embed service definition + codegen into sidecar & core adapter
-- [ ] `scripts/export_quantize.py` — export + dynamic int8 + **sparse-head validation**, local `models/` cache
-- [ ] `config.py` — env (model path, threads, workers, max_seq_len)
-- [ ] `embedder.py` — `encode()` dense + sparse from one pass
-- [ ] `tests/test_embedder.py` — standalone, passes with Docker closed
-- [ ] `server.py` — grpc.aio, shared session, executor offload, semaphore, warmup
-- [ ] `scripts/bench.py` — p50/p95 + QPS
-- [ ] `Dockerfile` + compose wiring (last)
+- [x] Scaffold `sidecars/model_server/` + `pyproject.toml` (own deps)
+- [x] `proto/` embed service definition + codegen into sidecar & core adapter
+- [~] `scripts/export_quantize.py` — written + logically validated; **RUN pending on a RAM-headroom machine** (this box OOMs; see dev-log Session 2 + `scripts/EXPORT_RUNBOOK.md`). Until then the sidecar serves on FP32 FlagEmbedding.
+- [x] `config.py` — env (model path, threads, workers, max_seq_len)
+- [x] `embedder.py` — `encode()` dense + sparse from one pass (FP32 FlagEmbedding backend; ONNX backend to be added when the int8 artifact lands)
+- [x] `tests/test_embedder.py` — standalone, passed (dense=1024, sparse head present)
+- [x] `server.py` — grpc.aio, shared session, executor offload, semaphore, warmup
+- [x] `scripts/bench.py` — p50/p95 (FP32: p50 469ms @ intra_op=4)
+- [ ] `Dockerfile` + compose wiring (last)  *(Dockerfile drafted)*
 - [ ] End-to-end test: Core API → gRPC → sidecar (Docker up once)
+- [ ] ⏳ **Run ONNX int8 export on 32GB laptop → retrieve `bge-m3-int8.onnx` via Git LFS → add selectable ONNX backend to `embedder.py` → re-bench vs ~250ms target**
 - [ ] FUTURE: reranker, dynamic micro-batching
 
 ## Open decisions to confirm

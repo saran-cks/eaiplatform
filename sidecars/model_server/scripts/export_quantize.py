@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 
 from ..config import config  # noqa: F401 — pins HF cache local + forces CPU
+from ..embedder import sparse_weights_to_dict  # shared sparse post-proc (no drift)
 
 import torch
 import torch.nn.functional as F
@@ -57,18 +58,6 @@ class M3OnnxWrapper(torch.nn.Module):
         dense = F.normalize(hidden[:, 0], dim=-1)              # (B, 1024)
         token_weights = torch.relu(self.sparse_linear(hidden)).squeeze(-1)  # (B, seq)
         return dense, token_weights
-
-
-def _sparse_dict(token_weights, input_ids, special_ids: set[int]) -> dict[int, float]:
-    """Token-id -> max weight, dropping special tokens and non-positive weights.
-    Mirrors FlagEmbedding's _process_token_weights so we match the wire contract."""
-    result: dict[int, float] = {}
-    for w, tok in zip(token_weights.tolist(), input_ids.tolist()):
-        if tok in special_ids or w <= 0.0:
-            continue
-        if w > result.get(tok, 0.0):
-            result[tok] = w
-    return result
 
 
 def _sparse_cosine(a: dict[int, float], b: dict[int, float]) -> float:
@@ -159,7 +148,7 @@ def main() -> None:
     for (input_ids, attn, ref_dense, ref_sparse), q in zip(oracle, VALIDATION_QUERIES):
         dense, tw = sess.run(None, {"input_ids": input_ids, "attention_mask": attn})
         onnx_dense = torch.tensor(dense[0])
-        onnx_sparse = _sparse_dict(torch.tensor(tw[0]), torch.tensor(input_ids[0]), special_ids)
+        onnx_sparse = sparse_weights_to_dict(tw[0], input_ids[0], special_ids)
 
         d_cos = F.cosine_similarity(ref_dense, onnx_dense, dim=0).item()
         s_cos = _sparse_cosine(ref_sparse, onnx_sparse)
