@@ -5,7 +5,6 @@ Orchestrates embedding generation, hybrid search, and permission constraints.
 
 from __future__ import annotations
 
-from config.settings import Settings
 from core.ports.retriever import RetrieverPort
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.domain.value_objects.retrieval_result import RetrievalResult

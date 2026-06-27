@@ -43,20 +43,19 @@ async def test_cache_hit_persists_turn():
     cache = AsyncMock()
     retriever = AsyncMock()
     llm = AsyncMock()
-    settings = MagicMock()
-    settings.cache_response_ttl = 3600
 
     use_case = SendChatMessageUseCase(
         store=store,
         cache=cache,
         retriever=retriever,
         llm=llm,
-        settings=settings,
+        retrieval_top_k=5,
+        cache_response_ttl=3600,
     )
 
     session = Session(session_id="session-1", tenant_id="tenant-1")
     scope = PermissionScope(tenant_id="tenant-1", permissions=frozenset(["read"]))
-    
+
     # Simulate a cache hit for the query
     cache.get.return_value = "Cached answer"
 
@@ -112,15 +111,14 @@ async def test_multi_turn_bypasses_cache():
     
     retriever = AsyncMock()
     llm = MagicMock()  # Use MagicMock so we can customize stream returning an iterator
-    settings = MagicMock()
-    settings.retrieval_top_k = 3
 
     use_case = SendChatMessageUseCase(
         store=store,
         cache=cache,
         retriever=retriever,
         llm=llm,
-        settings=settings,
+        retrieval_top_k=3,
+        cache_response_ttl=3600,
     )
 
     session = Session(session_id="session-1", tenant_id="tenant-1")
@@ -165,14 +163,14 @@ async def test_retrieval_failure_fails_closed():
     
     retriever = AsyncMock()
     llm = AsyncMock()
-    settings = MagicMock()
 
     use_case = SendChatMessageUseCase(
         store=store,
         cache=cache,
         retriever=retriever,
         llm=llm,
-        settings=settings,
+        retrieval_top_k=5,
+        cache_response_ttl=3600,
     )
 
     session = Session(session_id="session-1", tenant_id="tenant-1")

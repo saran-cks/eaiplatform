@@ -21,7 +21,6 @@ import logging
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 
-from config.settings import Settings
 from core.domain.entities.message import Message, Role, Turn
 from core.domain.entities.session import Session
 from core.domain.value_objects.permission_scope import PermissionScope
@@ -59,13 +58,15 @@ class SendChatMessageUseCase:
         cache: CachePort,
         retriever: RetrieverPort,
         llm: LLMPort,
-        settings: Settings,
+        retrieval_top_k: int,
+        cache_response_ttl: int,
     ) -> None:
         self._store = store
         self._cache = cache
         self._retriever = retriever
         self._llm = llm
-        self._settings = settings
+        self._retrieval_top_k = retrieval_top_k
+        self._cache_response_ttl = cache_response_ttl
 
     async def execute(
         self,
@@ -129,7 +130,7 @@ class SendChatMessageUseCase:
             retrieval_result = await self._retriever.search(
                 query=query_vector,
                 scope=scope,
-                top_k=self._settings.retrieval_top_k,
+                top_k=self._retrieval_top_k,
             )
             retrieved_chunks = retrieval_result.chunks
         except Exception as exc:
@@ -196,6 +197,6 @@ class SendChatMessageUseCase:
             await self._cache.set(
                 cache_key,
                 assistant_text,
-                ttl=self._settings.cache_response_ttl,
+                ttl=self._cache_response_ttl,
             )
         await self._cache.evict(f"session:{session.session_id}:history")

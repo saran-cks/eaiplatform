@@ -28,38 +28,45 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from config.settings import Settings
-
 logger = logging.getLogger(__name__)
 
 
-def init_otel(app: FastAPI, settings: Settings) -> None:
+def init_otel(
+    app: FastAPI,
+    *,
+    enabled: bool,
+    service_name: str,
+    environment: str,
+    otlp_endpoint: str,
+) -> None:
     """Bootstrap OpenTelemetry providers and instrument FastAPI.
 
-    When ``OTEL_ENABLED`` is False the function returns immediately, leaving
-    the global no-op providers in place (zero overhead).
+    Receives plain primitives (not the ``Settings`` object) so this layer stays
+    free of any dependency on ``config`` — the composition root reads settings and
+    passes the values in.
+
+    When ``enabled`` is False the function returns immediately, leaving the global
+    no-op providers in place (zero overhead).
     """
-    if not settings.otel_enabled:
+    if not enabled:
         logger.info("OpenTelemetry disabled (OTEL_ENABLED=false)")
         return
 
     resource = Resource.create(
         {
-            "service.name": settings.otel_service_name,
-            "deployment.environment": settings.app_env,
+            "service.name": service_name,
+            "deployment.environment": environment,
         }
     )
 
     # --- Traces ---
     tracer_provider = TracerProvider(resource=resource)
-    span_exporter = OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint, insecure=True)
+    span_exporter = OTLPSpanExporter(endpoint=otlp_endpoint, insecure=True)
     tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
     trace.set_tracer_provider(tracer_provider)
 
     # --- Metrics ---
-    metric_exporter = OTLPMetricExporter(
-        endpoint=settings.otel_exporter_otlp_endpoint, insecure=True
-    )
+    metric_exporter = OTLPMetricExporter(endpoint=otlp_endpoint, insecure=True)
     meter_provider = MeterProvider(
         resource=resource,
         metric_readers=[PeriodicExportingMetricReader(metric_exporter, export_interval_millis=15000)],
@@ -69,10 +76,7 @@ def init_otel(app: FastAPI, settings: Settings) -> None:
     # --- FastAPI auto-instrumentation ---
     FastAPIInstrumentor.instrument_app(app)
 
-    logger.info(
-        "OpenTelemetry initialised: traces+metrics -> %s",
-        settings.otel_exporter_otlp_endpoint,
-    )
+    logger.info("OpenTelemetry initialised: traces+metrics -> %s", otlp_endpoint)
 
 
 def shutdown_otel() -> None:

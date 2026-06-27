@@ -71,7 +71,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # --- Startup ---
     logger.info("Starting %s (%s)", settings.app_name, settings.app_env)
 
-    init_otel(app, settings)
+    init_otel(
+        app,
+        enabled=settings.otel_enabled,
+        service_name=settings.otel_service_name,
+        environment=settings.app_env,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+    )
     start_daemons(settings)
 
     logger.info("%s ready on %s:%d", settings.app_name, settings.api_host, settings.api_port)
