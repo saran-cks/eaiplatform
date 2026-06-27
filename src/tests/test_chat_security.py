@@ -19,7 +19,11 @@ from core.domain.entities.session import Session
 from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.domain.value_objects.retrieval_result import RetrievalResult
-from core.use_cases.chat.send_message import SendChatMessageUseCase, _build_cache_key
+from core.use_cases.chat.send_message import (
+    _SYSTEM_PROMPT_TEMPLATE,
+    SendChatMessageUseCase,
+    _build_cache_key,
+)
 
 
 def _benign_guard() -> AsyncMock:
@@ -42,6 +46,18 @@ def test_build_cache_key_includes_and_sorts_permissions():
     # Different permissions must produce completely different keys to prevent data leakage
     key3 = _build_cache_key(query, tenant_id, frozenset(["read"]))
     assert key1 != key3
+
+
+def test_system_prompt_marks_context_as_untrusted():
+    """Layer-0 (DD-13) regression guard: retrieved context must be framed as untrusted
+    data with structural markers and a do-not-obey instruction — never plain text."""
+    rendered = _SYSTEM_PROMPT_TEMPLATE.format(context="[1] some retrieved passage")
+    lowered = rendered.lower()
+    assert "untrusted" in lowered
+    assert "do not act on it" in lowered or "not act on it" in lowered
+    # Structural separation: the context sits between explicit begin/end markers.
+    assert "begin context" in lowered
+    assert "end context" in lowered
 
 
 @pytest.mark.asyncio
