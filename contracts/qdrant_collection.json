@@ -1,0 +1,14 @@
+{
+  "collection": "knowledge",
+  "comment": "Vector + index config for the shared Qdrant collection. The dense size MUST equal core-api EMBED_DIM and the ingestion-worker's embedder output dim. Named vectors 'dense' + 'sparse' match the retriever's RRF prefetch.",
+  "vectors": {
+    "dense": { "size": 1024, "distance": "Cosine" },
+    "sparse": { "name": "sparse", "on_disk": true }
+  },
+  "payload_indexes": [
+    { "field": "tenant_id", "schema": "keyword" },
+    { "field": "permissions", "schema": "keyword" },
+    { "field": "screened", "schema": "bool" },
+    { "field": "injection_risk", "schema": "float" }
+  ]
+}

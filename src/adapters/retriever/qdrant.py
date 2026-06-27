@@ -88,6 +88,18 @@ class QdrantRetrieverAdapter(RetrieverPort):
                         field_name="permissions",
                         field_schema=models.PayloadSchemaType.KEYWORD,
                     )
+                    # DD-13: index the ingest-screening signals so retrieval can filter /
+                    # down-rank on them (see contracts/qdrant_collection.json).
+                    await self._client.create_payload_index(
+                        collection_name=self._collection,
+                        field_name="screened",
+                        field_schema=models.PayloadSchemaType.BOOL,
+                    )
+                    await self._client.create_payload_index(
+                        collection_name=self._collection,
+                        field_name="injection_risk",
+                        field_schema=models.PayloadSchemaType.FLOAT,
+                    )
                     logger.info("Collection '%s' bootstrapped successfully.", self._collection)
                 self._bootstrapped = True
             except Exception as e:
@@ -185,6 +197,13 @@ class QdrantRetrieverAdapter(RetrieverPort):
                     text=payload.get("text", ""),
                     permissions=frozenset(payload.get("permissions", [])),
                     metadata=payload.get("metadata", {}),
+                    # DD-13 ingest-screening signals (absent on legacy points => unscreened).
+                    screened=bool(payload.get("screened", False)),
+                    injection_risk=float(payload.get("injection_risk", 0.0)),
+                    provenance=payload.get("provenance", {}),
+                    lang=payload.get("lang", ""),
+                    content_hash=payload.get("content_hash", ""),
+                    field_role=payload.get("field_role", ""),
                     score=point.score,
                 )
             )

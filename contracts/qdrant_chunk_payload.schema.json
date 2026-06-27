@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "eaiplatform/contracts/qdrant_chunk_payload.schema.json",
+  "title": "Qdrant Chunk Payload Contract v1",
+  "description": "Canonical payload of a Qdrant knowledge-chunk point. PRODUCER: ingestion_worker. CONSUMER: core-api retriever. Both cross-enforce via contract tests. Additive fields allowed; renaming/retyping a listed field is breaking.",
+  "type": "object",
+  "required": [
+    "chunk_id",
+    "document_id",
+    "tenant_id",
+    "text",
+    "permissions",
+    "screened",
+    "injection_risk"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "chunk_id": {
+      "type": "string",
+      "description": "Stable chunk id; also the Qdrant point id. See chunk_identity.md."
+    },
+    "document_id": {
+      "type": "string",
+      "description": "Parent document id within its source."
+    },
+    "tenant_id": {
+      "type": "string",
+      "description": "Hard tenant-isolation key. Keyword-indexed; the retriever filters on it."
+    },
+    "text": {
+      "type": "string",
+      "description": "The chunk text that gets injected into the LLM context."
+    },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Role tags. Keyword-indexed. The retriever admits a chunk if the caller holds any of these or the chunk is tagged 'public'."
+    },
+    "screened": {
+      "type": "boolean",
+      "description": "DD-13: true once the chunk has passed ingest-time screening (both guards ran). Absent/false => not screened."
+    },
+    "injection_risk": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "DD-13: P(prompt-injection) from Prompt Guard 2 at ingest. Retrieval may down-rank / neutralize on this; it is a signal, never an autonomous gate."
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Where the chunk came from.",
+      "properties": {
+        "source": { "type": "string" },
+        "native_id": { "type": "string" },
+        "source_type": { "type": "string" },
+        "ingested_at": { "type": "string" }
+      }
+    },
+    "lang": {
+      "type": "string",
+      "description": "Detected language code, e.g. 'en'."
+    },
+    "content_hash": {
+      "type": "string",
+      "description": "Per-chunk content hash used for delta/dedup against the registry."
+    },
+    "field_role": {
+      "type": "string",
+      "description": "For structured sources, the logical field this chunk came from (e.g. ticket 'description' | 'resolution' | 'notes')."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Open bag for source-specific enrichment not promoted to a top-level field."
+    }
+  }
+}

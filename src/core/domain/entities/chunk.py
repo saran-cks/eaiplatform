@@ -20,6 +20,16 @@ class Chunk(BaseModel):
     permissions: frozenset[str] = Field(default_factory=frozenset)
     metadata: dict[str, object] = Field(default_factory=dict)
 
+    # DD-13 ingest-time screening signals (written by the ingestion-worker; see
+    # contracts/qdrant_chunk_payload.schema.json). Absent on legacy points => unscreened.
+    screened: bool = False
+    injection_risk: float = 0.0
+    # Contract top-level enrichment (optional; defaults keep legacy points valid).
+    provenance: dict[str, object] = Field(default_factory=dict)
+    lang: str = ""
+    content_hash: str = ""
+    field_role: str = ""
+
 
 class RetrievedChunk(Chunk):
     """A chunk returned by hybrid search, carrying fusion and optional rerank scores."""
