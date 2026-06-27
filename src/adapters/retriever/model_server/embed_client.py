@@ -6,12 +6,13 @@ Sends query text and retrieves dense and sparse vector representations.
 from __future__ import annotations
 
 import logging
+
 import grpc
 
-from config.settings import Settings
-from core.domain.value_objects.embedding_vector import EmbeddingVector, SparseVector
 from adapters.retriever.model_server.proto.embedding_pb2 import EmbeddingRequest
 from adapters.retriever.model_server.proto.embedding_pb2_grpc import EmbeddingServiceStub
+from config.settings import Settings
+from core.domain.value_objects.embedding_vector import EmbeddingVector, SparseVector
 
 logger = logging.getLogger(__name__)
 

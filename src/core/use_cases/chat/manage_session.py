@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
-from core.domain.entities.message import Message, Role
+from core.domain.entities.message import Message
 from core.domain.entities.session import Session
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.cache import CachePort

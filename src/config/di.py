@@ -79,8 +79,8 @@ class Container:
     # --- agent (Session 6) ---
     @cached_property
     def agent(self) -> AgentPort:
-        from adapters.agent.langgraph_runner import LangGraphRunner
         from adapters.agent.a2a.registry import PeerRegistry
+        from adapters.agent.langgraph_runner import LangGraphRunner
         registry = PeerRegistry()
         return LangGraphRunner(self._settings, self.llm, peer_registry=registry)
 

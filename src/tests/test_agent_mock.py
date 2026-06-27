@@ -11,16 +11,15 @@ Tests that:
 from __future__ import annotations
 
 import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from core.domain.entities.session import AgentSession, AgentStatus
+from adapters.agent.langgraph_runner import AgentState, LangGraphRunner
+from core.domain.entities.session import AgentStatus
 from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.use_cases.agent.run_agent import RunAgentUseCase
-from adapters.agent.langgraph_runner import LangGraphRunner, AgentState, WorkerResult
 
 
 def _benign_guard() -> AsyncMock:

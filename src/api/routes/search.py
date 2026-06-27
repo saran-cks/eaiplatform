@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from api.schemas.search import RetrievedChunkResponse, SearchResponse
@@ -46,7 +47,7 @@ async def search(
         raise HTTPException(
             status_code=500,
             detail="Retrieval query failed internally",
-        )
+        ) from e
 
     # Map core domain result structures to API response schemas
     chunks_response = [

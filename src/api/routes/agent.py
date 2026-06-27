@@ -18,7 +18,6 @@ from fastapi.responses import StreamingResponse
 
 from api.schemas.agent import (
     AgentRunRequest,
-    AgentSessionOut,
     ArtifactOut,
 )
 from core.use_cases.agent.manage_artifacts import ManageArtifactsUseCase
@@ -139,7 +138,9 @@ async def interrupt_agent(agent_session_id: str, request: Request) -> dict[str, 
         await container.agent.interrupt(agent_session_id=agent_session_id)
     except Exception as exc:
         logger.error("Failed to interrupt agent task: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to interrupt agent execution")
+        raise HTTPException(
+            status_code=500, detail="Failed to interrupt agent execution"
+        ) from exc
 
     return {"status": "interrupted"}
 

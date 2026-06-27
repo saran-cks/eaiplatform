@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from core.domain.entities.session import AgentSession, AgentStatus
@@ -69,7 +69,7 @@ class RunAgentUseCase:
             tenant_id=scope.tenant_id,
             subject_id=scope.subject_id,
             status=AgentStatus.RUNNING,
-            started_at=datetime.now(tz=timezone.utc),
+            started_at=datetime.now(tz=UTC),
         )
         
         await self._store.create_agent_session(agent_session)
@@ -136,7 +136,7 @@ class RunAgentUseCase:
             
             # Retrieve current status from memory state
             agent_session.status = final_status
-            agent_session.ended_at = datetime.now(tz=timezone.utc)
+            agent_session.ended_at = datetime.now(tz=UTC)
             agent_session.metadata["truncated"] = truncated
             agent_session.metadata["final_synthesis"] = final_synthesis
             

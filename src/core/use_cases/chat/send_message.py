@@ -16,10 +16,9 @@ All I/O is async; no blocking calls on the event loop.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from core.domain.entities.message import Message, Role, Turn
 from core.domain.entities.session import Session
@@ -127,20 +126,20 @@ class SendChatMessageUseCase:
                     session_id=session.session_id,
                     role=Role.USER,
                     content=query,
-                    created_at=datetime.now(tz=timezone.utc),
+                    created_at=datetime.now(tz=UTC),
                 )
                 assistant_message = Message(
                     session_id=session.session_id,
                     role=Role.ASSISTANT,
                     content=cached_response,
-                    created_at=datetime.now(tz=timezone.utc),
+                    created_at=datetime.now(tz=UTC),
                 )
                 turn = Turn(
                     session_id=session.session_id,
                     user_message=user_message,
                     assistant_message=assistant_message,
                     retrieved_chunks=[],
-                    created_at=datetime.now(tz=timezone.utc),
+                    created_at=datetime.now(tz=UTC),
                 )
                 try:
                     await self._store.append_turn(turn)
@@ -185,7 +184,7 @@ class SendChatMessageUseCase:
             session_id=session.session_id,
             role=Role.USER,
             content=query,
-            created_at=datetime.now(tz=timezone.utc),
+            created_at=datetime.now(tz=UTC),
         )
         all_messages = list(history) + [user_message]
 
@@ -209,7 +208,7 @@ class SendChatMessageUseCase:
             session_id=session.session_id,
             role=Role.ASSISTANT,
             content=assistant_text,
-            created_at=datetime.now(tz=timezone.utc),
+            created_at=datetime.now(tz=UTC),
         )
 
         # --- step 7: persist turn ---
@@ -218,7 +217,7 @@ class SendChatMessageUseCase:
             user_message=user_message,
             assistant_message=assistant_message,
             retrieved_chunks=retrieved_chunks,
-            created_at=datetime.now(tz=timezone.utc),
+            created_at=datetime.now(tz=UTC),
         )
         try:
             await self._store.append_turn(turn)

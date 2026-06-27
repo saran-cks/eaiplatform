@@ -8,20 +8,21 @@ automated collection initialization.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
 import logging
+from collections.abc import Mapping, Sequence
 from typing import Any
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models
 
+from adapters.retriever.model_server.embed_client import ModelServerEmbedClient
+from adapters.retriever.model_server.rerank_client import ModelServerRerankClient
 from config.settings import Settings
-from core.ports.retriever import RetrieverPort
 from core.domain.entities.chunk import RetrievedChunk
 from core.domain.value_objects.embedding_vector import EmbeddingVector
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.domain.value_objects.retrieval_result import RetrievalResult
-from adapters.retriever.model_server.embed_client import ModelServerEmbedClient
-from adapters.retriever.model_server.rerank_client import ModelServerRerankClient
+from core.ports.retriever import RetrieverPort
 
 logger = logging.getLogger(__name__)
 

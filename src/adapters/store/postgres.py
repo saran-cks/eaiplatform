@@ -6,18 +6,18 @@ Handles automatic table bootstrapping on first query via an internal connection 
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 import json
 import logging
-from typing import Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
+
 import asyncpg
 
 from config.settings import Settings
-from core.ports.store import StorePort
-from core.domain.entities.session import Session, SessionStatus, AgentSession, AgentStatus
-from core.domain.entities.message import Message, Turn, Role
 from core.domain.entities.document import Document, Source, SourceKind
-from core.domain.entities.chunk import RetrievedChunk
+from core.domain.entities.message import Message, Role, Turn
+from core.domain.entities.session import AgentSession, AgentStatus, Session, SessionStatus
+from core.ports.store import StorePort
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +156,8 @@ class PostgresAdapter(StorePort):
                 updated_at = EXCLUDED.updated_at
             RETURNING created_at, updated_at
         """
-        created_at = session.created_at or datetime.now(timezone.utc)
-        updated_at = session.updated_at or datetime.now(timezone.utc)
+        created_at = session.created_at or datetime.now(UTC)
+        updated_at = session.updated_at or datetime.now(UTC)
         metadata_json = json.dumps(session.metadata)
 
         pool = await self._get_pool()
@@ -271,7 +271,7 @@ class PostgresAdapter(StorePort):
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (message_id) DO NOTHING
         """
-        user_created_at = turn.user_message.created_at or datetime.now(timezone.utc)
+        user_created_at = turn.user_message.created_at or datetime.now(UTC)
         user_meta = json.dumps(turn.user_message.metadata)
 
         pool = await self._get_pool()
@@ -292,7 +292,7 @@ class PostgresAdapter(StorePort):
                 assistant_id = None
                 if turn.assistant_message:
                     assistant_id = turn.assistant_message.message_id
-                    assistant_created_at = turn.assistant_message.created_at or datetime.now(timezone.utc)
+                    assistant_created_at = turn.assistant_message.created_at or datetime.now(UTC)
                     assistant_meta = json.dumps(turn.assistant_message.metadata)
                     await conn.execute(
                         msg_query,
@@ -321,7 +321,7 @@ class PostgresAdapter(StorePort):
                         retrieved_chunks = EXCLUDED.retrieved_chunks
                     RETURNING created_at
                 """
-                turn_created_at = turn.created_at or datetime.now(timezone.utc)
+                turn_created_at = turn.created_at or datetime.now(UTC)
                 row = await conn.fetchrow(
                     turn_query,
                     turn.turn_id,
@@ -380,7 +380,7 @@ class PostgresAdapter(StorePort):
                 ended_at = EXCLUDED.ended_at
             RETURNING started_at
         """
-        started_at = agent_session.started_at or datetime.now(timezone.utc)
+        started_at = agent_session.started_at or datetime.now(UTC)
         peers_json = json.dumps(agent_session.a2a_peers)
         metadata_json = json.dumps(agent_session.metadata)
 
@@ -441,7 +441,7 @@ class PostgresAdapter(StorePort):
     ) -> None:
         ended_at = None
         if status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.ZOMBIE, AgentStatus.INTERRUPTED):
-            ended_at = datetime.now(timezone.utc)
+            ended_at = datetime.now(UTC)
             query = """
                 UPDATE agent_sessions
                 SET status = $1, ended_at = COALESCE(ended_at, $2)
