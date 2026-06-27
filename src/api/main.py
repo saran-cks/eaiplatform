@@ -135,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         secret=settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
         audience=settings.jwt_audience,
+        issuer=settings.jwt_issuer,
     )
 
     # --- Routes ---

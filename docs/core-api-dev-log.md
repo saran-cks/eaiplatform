@@ -146,3 +146,13 @@ This file tracks the historical sequence of build sessions, architectural additi
     *   **LangGraph Node Config Binding**: Config annotation in node functions must be `RunnableConfig` from `langchain_core.runnables` (using `dict[str, Any]` raises `TypeError`).
     *   **LangGraph 1.x Send Import**: Importing `Send` from `langgraph.constants` is deprecated; must import from `langgraph.types`.
     *   **Ruff Line Length E501**: Long text inputs and dictionary items exceeded the 100-character line-length threshold. Resolved by splitting lines, extracting temporary variables, and multi-line wrapping in `langgraph_runner.py`.
+
+---
+
+## Session 7: Security hardening — JWT issuer (`iss`) validation — 2026-06-27
+*   **Trigger (review feedback)**: "JWT auth doesn't validate `iss`. The `jwt.decode` call passes `audience` but not `issuer`. The `JWT_ISSUER` setting exists but isn't used in `AuthMiddleware`. Easy fix but a real gap."
+*   **Fix**:
+    *   `AuthMiddleware.__init__` now takes an `issuer` param; `jwt.decode(...)` passes `issuer=self._issuer` plus `options={"require": ["iss", "aud"]}` so a wrong issuer (`InvalidIssuerError`) and a missing `iss`/`aud` (`MissingRequiredClaimError`) are both rejected — both subclasses of `InvalidTokenError`, already mapped to **401**. Fails closed.
+    *   `src/api/main.py` passes `issuer=settings.jwt_issuer` into the middleware (the setting existed and was previously dead).
+*   **Regression test (new `src/tests/test_auth.py`)**: spins a minimal Starlette app behind `AuthMiddleware` + `TestClient`, signs tokens with PyJWT. Asserts: valid `iss` -> 200 + scope; wrong `iss` -> 401; missing `iss` -> 401; wrong `aud` -> 401; no Bearer header -> 401. This is the first direct test of `AuthMiddleware` (previously untested).
+*   **Verification**: `uv run pytest src/tests/ -q` -> **15 passed**. New file ruff-clean.

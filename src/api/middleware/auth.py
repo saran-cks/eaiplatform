@@ -39,11 +39,14 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
 class AuthMiddleware(BaseHTTPMiddleware):
     """Extract and verify JWT, build PermissionScope, attach to request.state."""
 
-    def __init__(self, app: FastAPI, *, secret: str, algorithm: str, audience: str) -> None:
+    def __init__(
+        self, app: FastAPI, *, secret: str, algorithm: str, audience: str, issuer: str
+    ) -> None:
         super().__init__(app)
         self._secret = secret
         self._algorithm = algorithm
         self._audience = audience
+        self._issuer = issuer
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for public paths.
@@ -65,6 +68,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 self._secret,
                 algorithms=[self._algorithm],
                 audience=self._audience,
+                issuer=self._issuer,
+                options={"require": ["iss", "aud"]},
             )
         except jwt.ExpiredSignatureError:
             return JSONResponse(status_code=401, content={"detail": "Token expired"})
