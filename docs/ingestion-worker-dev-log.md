@@ -59,7 +59,9 @@ daemons) and slot behind the existing ports later.
   before parse, re-ingest no-op, deleted-field tombstone, producer contract).
 - Core-api side unaffected: `pytest src/tests` → **29 passed**. Worker package ruff-clean.
 
-### Deferred (blocking — need live systems; see `docs/smoke-tests.md` ST-2)
-Connectors (ServiceNow/Zendesk/GitHub/SharePoint/S3), S3 staging, clamd, OCR/parsers,
-worker-own bge-m3 embedder, Qdrant/Postgres adapters, ARQ queue + Job Planner, EventBridge
-trigger, Phoenix spans. All behind existing ports.
+### Deferred (blocking — need live systems)
+Phases 3–5 are the blocking roadmap, detailed per-adapter in
+**`docs/ingestion-worker-build-plan.md`**: Phase 3 (clamd / Llama Guard+Presidio / parsers
++OCR / Qdrant+Postgres sinks / worker-own bge-m3 / S3 staging + dual-write hardening),
+Phase 4 (connectors), Phase 5 (Job Planner / ARQ queue / EventBridge trigger / Phoenix).
+All slot behind existing ports. Live verification checklist: `docs/smoke-tests.md` ST-2.
