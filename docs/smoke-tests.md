@@ -72,3 +72,30 @@ Set `GUARD_ENABLED=false`, restart the API:
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+---
+
+## ST-2: Ingestion worker — live adapters end-to-end — added 2026-06-27 — **PENDING**
+
+Phases 0–2 built the worker against fakes (`docs/ingestion-worker-dev-log.md`); the whole
+pipeline passes offline. What's unverified is everything behind a port that needs a live
+system. Run this once the real adapters land (Phase 3/4).
+
+### What to verify
+1. **Contract holds against a real Qdrant.** Run the worker on a sample corpus, then have
+   the core-api retriever read the points back — `screened` / `injection_risk` / `permissions`
+   round-trip intact, and the collection has the `screened` + `injection_risk` payload
+   indexes (`contracts/qdrant_collection.json`).
+2. **Security gate with real clamd.** Feed the EICAR test file → quarantined, never parsed;
+   feed an extension/magic mismatch (e.g. `.pdf` that isn't `%PDF`) → `malformed`.
+3. **Both guards at ingest.** A doc with an injection payload → chunk stored with high
+   `injection_risk`, `screened=true` (stamped, NOT dropped). A genuinely abusive doc →
+   quarantined. A doc with PII (email/SSN) → stored text redacted.
+4. **Idempotency / delta against real Postgres + Qdrant.** Re-ingest unchanged corpus →
+   zero upserts (all unchanged). Delete a record at source → its chunks tombstoned out of
+   Qdrant. Kill the worker mid dual-write, restart → no duplicate points, registry consistent.
+5. **Worker-own bge-m3 dim == 1024** and matches the collection's dense vector size; sparse
+   vectors present.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:
