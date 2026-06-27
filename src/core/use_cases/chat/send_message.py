@@ -23,13 +23,20 @@ from datetime import datetime, timezone
 
 from core.domain.entities.message import Message, Role, Turn
 from core.domain.entities.session import Session
+from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.cache import CachePort
+from core.ports.guard import GuardPort
 from core.ports.llm import LLMPort
 from core.ports.retriever import RetrieverPort
 from core.ports.store import StorePort
 
 logger = logging.getLogger(__name__)
+
+# Shown to the user when the prompt guard blocks the query (or screening fails closed).
+_GUARD_REFUSAL = (
+    "I can't process that request because it was flagged by our safety filter."
+)
 
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are a knowledgeable AI assistant. Answer the user's question using ONLY the
@@ -58,6 +65,7 @@ class SendChatMessageUseCase:
         cache: CachePort,
         retriever: RetrieverPort,
         llm: LLMPort,
+        guard: GuardPort,
         retrieval_top_k: int,
         cache_response_ttl: int,
     ) -> None:
@@ -65,6 +73,7 @@ class SendChatMessageUseCase:
         self._cache = cache
         self._retriever = retriever
         self._llm = llm
+        self._guard = guard
         self._retrieval_top_k = retrieval_top_k
         self._cache_response_ttl = cache_response_ttl
 
@@ -80,6 +89,24 @@ class SendChatMessageUseCase:
 
         Callers MUST consume the entire iterator to ensure Turn persistence.
         """
+        # --- step 0: screen the user query (first line of defence; fail-closed) ---
+        # A malicious query must not reach the cache, retrieval, or the LLM.
+        try:
+            verdict = await self._guard.screen(query)
+        except Exception as exc:
+            logger.error(
+                "Guard screening unavailable for session %s; failing closed: %s",
+                session.session_id, exc,
+            )
+            verdict = GuardVerdict.refuse()
+        if verdict.blocked:
+            logger.warning(
+                "Query blocked by prompt guard (session=%s, tenant=%s, label=%s, score=%.4f)",
+                session.session_id, scope.tenant_id, verdict.label, verdict.score,
+            )
+            yield _GUARD_REFUSAL
+            return
+
         is_single_turn = len(history) == 0
         cache_key = _build_cache_key(query, scope.tenant_id, scope.permissions)
 

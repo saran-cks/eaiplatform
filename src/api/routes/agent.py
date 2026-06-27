@@ -75,7 +75,7 @@ async def run_agent(
     # Generate a unique session ID for the running instance
     agent_session_id = str(uuid4())
 
-    run_uc = RunAgentUseCase(store=container.store, agent=container.agent)
+    run_uc = RunAgentUseCase(store=container.store, agent=container.agent, guard=container.guard)
 
     async def _event_generator():
         truncated = False

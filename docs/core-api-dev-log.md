@@ -156,3 +156,21 @@ This file tracks the historical sequence of build sessions, architectural additi
     *   `src/api/main.py` passes `issuer=settings.jwt_issuer` into the middleware (the setting existed and was previously dead).
 *   **Regression test (new `src/tests/test_auth.py`)**: spins a minimal Starlette app behind `AuthMiddleware` + `TestClient`, signs tokens with PyJWT. Asserts: valid `iss` -> 200 + scope; wrong `iss` -> 401; missing `iss` -> 401; wrong `aud` -> 401; no Bearer header -> 401. This is the first direct test of `AuthMiddleware` (previously untested).
 *   **Verification**: `uv run pytest src/tests/ -q` -> **15 passed**. New file ruff-clean.
+
+---
+
+## Session 8: Wire the Prompt Guard — input screening on both user-facing entry points — 2026-06-27
+*   **Trigger**: "wire the prompt guard." The Prompt Guard sidecar was built and validated standalone (frozen contract `POST /guard {text} -> {label, score, blocked}`, `GET /health`), and `GUARD_ENABLED` / `GUARD_GATEWAY_URL` settings existed, but **nothing in `src/` ever called it** — chat and agent sent raw user input straight to retrieval/LLM/agent. This wires the first line of defence.
+*   **Decisions (user-confirmed)**:
+    *   **Fail-closed.** If the guard blocks *or* screening can't complete (sidecar down/timeout), the request is refused — consistent with how embed/retrieval already fail-closed in the same chat use case. A down guard means no chat, by design.
+    *   **"Chat" = both user-facing front doors.** Screen the RAG chat endpoint **and** the agent endpoint. Both are reachable from the UI; both get a preliminary guard on the inbound user text.
+    *   **Classify-only stays in the sidecar; the product decision lives in the Core API.** The port returns a verdict; the use case decides refuse/allow. Threshold remains a sidecar concern.
+*   **Hexagonal wiring (port → adapter → DI → use case, no boundary violations — `test_architecture.py` still green)**:
+    *   **Domain VO** `core/domain/value_objects/guard_verdict.py`: frozen `GuardVerdict(label, score, blocked)` with `.allow()` / `.refuse()` factories.
+    *   **Port** `core/ports/guard.py`: `GuardPort` Protocol — `async screen(text) -> GuardVerdict` + `async close()`.
+    *   **Adapters** `adapters/guard/`: `HttpGuardAdapter` (httpx `AsyncClient`, tight `Timeout(5.0, connect=2.0)`, maps JSON → verdict, **raises** on transport/HTTP error — does not swallow); `NullGuardAdapter` (always-allow, logged warning) bound when `GUARD_ENABLED=false` so use cases call `screen()` unconditionally.
+    *   **DI** `config/di.py`: `Container.guard` returns the HTTP adapter when enabled, else the null adapter. `main.py` closes the httpx client on shutdown (mirrors store/retriever).
+    *   **Chat** (`use_cases/chat/send_message.py`): screen `query` as **step 0**, before the cache probe — a malicious query never touches cache, retrieval, or the LLM. Blocked/fail-closed → log + yield a fixed refusal string + `return`. No persistence of blocked turns.
+    *   **Agent** (`use_cases/agent/run_agent.py`): screen `prompt` at the top of `execute()`, **before** the `AgentSession` is created or any state is written. Blocked → return a single-event `_refusal_stream()` emitting an `output` event with the refusal (route appends `done`); the agent loop never starts.
+*   **Verification**: new `src/tests/test_guard.py` (7 tests): adapter maps malicious response, adapter raises on HTTP 500, null guard allows, chat blocks before pipeline (no cache/embed/llm calls), chat fails closed on guard exception, agent refuses before run (no session/`agent.run`). Updated the 3 chat + 2 agent use-case construction sites in existing tests with a benign-guard mock (a bare `AsyncMock` would return a truthy `.blocked` and wrongly block everything). `uv run pytest src/tests -q` -> **21 passed**; new files ruff-clean (pre-existing lint debt in touched files left out of scope, as before).
+*   **Deliberately out of scope (future, per DDs)**: retrieved-content / RAG-corpus scanning is **ingest-time** (DD-13, ingestion worker) — not this input-screening layer. Layer-0 system-prompt hardening, taint/PDP/trajectory monitoring remain design-only. The guard is input screening, not the action-layer control.

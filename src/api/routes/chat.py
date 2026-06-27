@@ -196,6 +196,7 @@ async def send_message(
         cache=container.cache,
         retriever=container.retriever,
         llm=container.llm,
+        guard=container.guard,
         retrieval_top_k=settings.retrieval_top_k,
         cache_response_ttl=settings.cache_response_ttl,
     )

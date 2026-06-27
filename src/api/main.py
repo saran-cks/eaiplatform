@@ -104,6 +104,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.warning("Error closing retriever adapter: %s", exc)
 
+    if "guard" in container.__dict__:
+        try:
+            await container.guard.close()
+        except Exception as exc:
+            logger.warning("Error closing guard adapter: %s", exc)
+
     logger.info("%s stopped", settings.app_name)
 
 

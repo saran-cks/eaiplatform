@@ -17,19 +17,27 @@ from datetime import datetime, timezone
 from typing import Any
 
 from core.domain.entities.session import AgentSession, AgentStatus
+from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.agent import AgentPort
+from core.ports.guard import GuardPort
 from core.ports.store import StorePort
 
 logger = logging.getLogger(__name__)
+
+# Shown to the user when the prompt guard blocks the agent prompt (or screening fails closed).
+_GUARD_REFUSAL = (
+    "I can't run that request because it was flagged by our safety filter."
+)
 
 
 class RunAgentUseCase:
     """Orchestrates starting an agent session, execution, and lifecycle persistence."""
 
-    def __init__(self, store: StorePort, agent: AgentPort) -> None:
+    def __init__(self, store: StorePort, agent: AgentPort, guard: GuardPort) -> None:
         self._store = store
         self._agent = agent
+        self._guard = guard
 
     async def execute(
         self,
@@ -40,6 +48,20 @@ class RunAgentUseCase:
         scope: PermissionScope,
     ) -> AsyncIterator[Mapping[str, Any]]:
         """Launch the agent loop, yield execution steps, and guarantee status update on exit."""
+        # 0. Screen the prompt (first line of defence; fail-closed). A blocked prompt
+        # must not start an agent run — refuse before any session/state is created.
+        try:
+            verdict = await self._guard.screen(prompt)
+        except Exception as exc:
+            logger.error("Guard screening unavailable for agent prompt; failing closed: %s", exc)
+            verdict = GuardVerdict.refuse()
+        if verdict.blocked:
+            logger.warning(
+                "Agent prompt blocked by prompt guard (tenant=%s, label=%s, score=%.4f)",
+                scope.tenant_id, verdict.label, verdict.score,
+            )
+            return self._refusal_stream()
+
         # 1. Initialize and save the AgentSession with 'running' status
         agent_session = AgentSession(
             agent_session_id=agent_session_id,
@@ -55,6 +77,17 @@ class RunAgentUseCase:
 
         # 2. Return the generator that yields events and wraps the run in a finally block
         return self._run_lifecycle(agent_session, prompt, scope)
+
+    async def _refusal_stream(self) -> AsyncIterator[Mapping[str, Any]]:
+        """Single-event stream emitting the guard refusal as the agent's output.
+
+        No AgentSession is created for a blocked prompt; the route appends the
+        terminating ``done`` event.
+        """
+        yield {
+            "event": "output",
+            "data": {"content": _GUARD_REFUSAL, "truncated": False, "source": "guard"},
+        }
 
     async def _run_lifecycle(
         self,

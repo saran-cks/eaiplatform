@@ -16,9 +16,17 @@ import pytest
 
 from core.domain.entities.message import Message, Role, Turn
 from core.domain.entities.session import Session
+from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.domain.value_objects.retrieval_result import RetrievalResult
 from core.use_cases.chat.send_message import SendChatMessageUseCase, _build_cache_key
+
+
+def _benign_guard() -> AsyncMock:
+    """A guard mock that classifies every query as benign (does not block)."""
+    guard = AsyncMock()
+    guard.screen.return_value = GuardVerdict.allow()
+    return guard
 
 
 def test_build_cache_key_includes_and_sorts_permissions():
@@ -49,6 +57,7 @@ async def test_cache_hit_persists_turn():
         cache=cache,
         retriever=retriever,
         llm=llm,
+        guard=_benign_guard(),
         retrieval_top_k=5,
         cache_response_ttl=3600,
     )
@@ -117,6 +126,7 @@ async def test_multi_turn_bypasses_cache():
         cache=cache,
         retriever=retriever,
         llm=llm,
+        guard=_benign_guard(),
         retrieval_top_k=3,
         cache_response_ttl=3600,
     )
@@ -169,6 +179,7 @@ async def test_retrieval_failure_fails_closed():
         cache=cache,
         retriever=retriever,
         llm=llm,
+        guard=_benign_guard(),
         retrieval_top_k=5,
         cache_response_ttl=3600,
     )

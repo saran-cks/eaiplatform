@@ -17,9 +17,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.domain.entities.session import AgentSession, AgentStatus
+from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.use_cases.agent.run_agent import RunAgentUseCase
 from adapters.agent.langgraph_runner import LangGraphRunner, AgentState, WorkerResult
+
+
+def _benign_guard() -> AsyncMock:
+    """A guard mock that classifies every prompt as benign (does not block)."""
+    guard = AsyncMock()
+    guard.screen.return_value = GuardVerdict.allow()
+    return guard
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +143,7 @@ async def test_agent_run_lifecycle_persistence():
     store = AsyncMock()
     agent = MagicMock()
     
-    use_case = RunAgentUseCase(store=store, agent=agent)
+    use_case = RunAgentUseCase(store=store, agent=agent, guard=_benign_guard())
     
     session_id = "chat-session-1"
     agent_session_id = "agent-session-1"
@@ -179,7 +187,7 @@ async def test_agent_run_lifecycle_interrupted():
     store = AsyncMock()
     agent = MagicMock()
     
-    use_case = RunAgentUseCase(store=store, agent=agent)
+    use_case = RunAgentUseCase(store=store, agent=agent, guard=_benign_guard())
     
     session_id = "chat-session-1"
     agent_session_id = "agent-session-1"

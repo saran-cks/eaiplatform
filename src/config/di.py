@@ -21,6 +21,7 @@ from functools import cached_property
 from config.settings import Settings, get_settings
 from core.ports.agent import AgentPort
 from core.ports.cache import CachePort
+from core.ports.guard import GuardPort
 from core.ports.llm import LLMPort
 from core.ports.mcp_connector import MCPConnectorPort
 from core.ports.observability import ObservabilityPort
@@ -65,6 +66,15 @@ class Container:
     def llm(self) -> LLMPort:
         from adapters.llm.bedrock import BedrockAdapter
         return BedrockAdapter(self._settings)
+
+    # --- prompt guard (input screening; chat + agent front door) ---
+    @cached_property
+    def guard(self) -> GuardPort:
+        if not self._settings.guard_enabled:
+            from adapters.guard.null_guard import NullGuardAdapter
+            return NullGuardAdapter()
+        from adapters.guard.http_guard import HttpGuardAdapter
+        return HttpGuardAdapter(self._settings)
 
     # --- agent (Session 6) ---
     @cached_property
