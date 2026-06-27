@@ -207,3 +207,11 @@ This file tracks the historical sequence of build sessions, architectural additi
 *   **Design fidelity (DD-9)**: the monitor consumes provenance/taint as a *risk input* (read-then-exfil, external-source writes), never as a hard gate — consistent with "taint is a signal." A bulk read of *sensitive* data is a mild signal by design; reads of non-sensitive data are free.
 *   **Verification**: 9 trajectory tests; `uv run pytest src/tests -q` -> **57 passed**; new files ruff-clean. DD-11 enforcement line updated to "Implemented (core, no caller yet)".
 *   **Deliberately out of scope**: Redis-backed `SessionRiskStore` (in-memory now; `SessionRiskState` is serializable for the future port), Phoenix spans, and the agent-runtime caller that enforces the verdict.
+
+---
+
+## Session 12: coverage + lint hygiene — 2026-06-28
+*   **New unit tests** (targeting load-bearing logic that was only covered indirectly):
+    *   `test_permission_scope.py` (8) — the security-boundary VO had **zero** direct tests. Covers `has`/`has_any`/`has_all`/`require` and the critical `from_claims` JWT parsing: happy path, **missing/empty `tenant_id` → `PermissionDenied`** (the tenant-isolation failure mode), malformed `permissions` → empty (no accidental grant), absent subject, frozen immutability.
+*   **Lint hygiene** (whole `src`): no critical/bug findings (no F821/F811/F841/syntax). Cleaned 48 — 46 ruff autofixes (unused imports, import order, `datetime.UTC`, deprecated imports) + 2 `B904` by hand (proper `raise … from exc` in the agent-interrupt and search routes, preserving the original traceback). Remaining 29 E501 + 3 RUF are cosmetic, left as-is.
+*   **Verification**: `uv run pytest src/tests -q` -> **65 passed** (was 57). (Ingestion-worker coverage logged separately.)

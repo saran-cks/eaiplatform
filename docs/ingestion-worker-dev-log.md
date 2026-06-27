@@ -65,3 +65,19 @@ Phases 3–5 are the blocking roadmap, detailed per-adapter in
 +OCR / Qdrant+Postgres sinks / worker-own bge-m3 / S3 staging + dual-write hardening),
 Phase 4 (connectors), Phase 5 (Job Planner / ARQ queue / EventBridge trigger / Phoenix).
 All slot behind existing ports. Live verification checklist: `docs/smoke-tests.md` ST-2.
+
+---
+
+## Session 2: coverage for the load-bearing pure logic — 2026-06-28
+Direct unit tests for the stages the Phase-1 end-to-end test only exercised via the ticket
+path:
+- `test_identity.py` (4) — the `chunk_id` idempotency contract (`contracts/chunk_identity.md`):
+  determinism (re-ingest overwrites the same point), variation across every component,
+  **unit-separator collision safety** (`('ab','c')` ≠ `('a','bc')`), content-hash sensitivity.
+- `test_security_gate.py` (5) — the pre-parse static checks: empty→malformed, oversize,
+  **magic-byte mismatch** (trust the bytes, not the declared type), valid PDF magic passes,
+  text-without-magic passes. (Only the clamd path was covered before.)
+- `test_dedup.py` (4) — `diff()` delta classification: new→upsert, unchanged→skip,
+  changed-content→upsert, missing→tombstone.
+- **Verification**: `python -m pytest ingestion_worker/tests -q` → **23 passed** (was 10).
+  Worker stays ruff-clean.
