@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     mcp_enabled: bool = Field(True, alias="MCP_ENABLED")
     # Mock transport (canned results, no live MCP servers) until real connectors land.
     mcp_mock_mode: bool = Field(True, alias="MCP_MOCK_MODE")
+    # Persist DD-11 trajectory risk to Valkey (cross-worker / restart-safe). Off ⇒ in-process
+    # only (fine for a single worker; defeated by horizontal scale).
+    risk_store_enabled: bool = Field(True, alias="RISK_STORE_ENABLED")
+    risk_store_ttl_seconds: int = Field(1800, alias="RISK_STORE_TTL_SECONDS")
 
     # --- AWS Bedrock ---
     aws_region: str = Field("us-east-1", alias="AWS_REGION")

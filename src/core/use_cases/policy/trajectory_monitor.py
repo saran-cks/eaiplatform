@@ -8,11 +8,16 @@ DD-8 stops the single catastrophic action; this stops the slow accumulation. Nei
 alone is sufficient: a chain where every step is individually PDP-allowed still trips
 this monitor (asserted by the "thousand small cuts" test).
 
-Session state is in-memory here; a Redis-backed ``SessionRiskStore`` port can persist
-``SessionRiskState`` across replicas later (it is a plain serializable dataclass).
+Session state is in-process by default; injecting a ``SessionRiskStorePort`` makes
+``observe_async`` hydrate/persist ``SessionRiskState`` from a shared backend (Valkey) so
+risk accumulates across workers and survives restarts. The sync ``observe`` is unchanged
+(scoring is the same); persistence is layered on top, fail-soft.
 """
 
 from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
 
 from core.domain.policy.trajectory import (
     DRIFT_WINDOW,
@@ -25,6 +30,11 @@ from core.domain.policy.trajectory import (
 )
 from core.domain.policy.types import DecisionEffect, Effect, Reversibility
 
+if TYPE_CHECKING:
+    from core.ports.session_risk_store import SessionRiskStorePort
+
+logger = logging.getLogger(__name__)
+
 _DRIFT_DENSITY = 0.6  # fraction of the recent window that must be mutating to count as drift
 
 
@@ -34,12 +44,15 @@ class TrajectoryMonitor:
         *,
         weights: RiskWeights | None = None,
         thresholds: RiskThresholds | None = None,
+        store: SessionRiskStorePort | None = None,
     ) -> None:
         self._w = weights or RiskWeights()
         self._t = thresholds or RiskThresholds()
+        self._store = store
         self._sessions: dict[str, SessionRiskState] = {}
 
     def observe(self, session_id: str, event: ActionEvent) -> TrajectoryVerdict:
+        """Synchronous, in-process scoring + accumulation (no persistence)."""
         state = self._sessions.setdefault(session_id, SessionRiskState())
         increment, signals = self._score(state, event)
         state.record(event, increment)
@@ -47,13 +60,46 @@ class TrajectoryMonitor:
             level=self._t.level_for(state.risk), risk=state.risk, signals=tuple(signals)
         )
 
+    async def observe_async(self, session_id: str, event: ActionEvent) -> TrajectoryVerdict:
+        """Persistence-aware observe: hydrate from the store, score, write back.
+
+        Fail-soft — a store outage degrades to pure in-process accumulation (a weaker DD-11,
+        but never a broken action path). Without a store this is just ``observe``.
+        """
+        if self._store is not None:
+            try:
+                loaded = await self._store.load(session_id)
+                if loaded is not None:
+                    self._sessions[session_id] = loaded
+            except Exception as exc:  # backend down → fall back to in-process state
+                logger.warning("SessionRiskStore.load failed (%s); in-memory: %s", session_id, exc)
+
+        verdict = self.observe(session_id, event)
+
+        if self._store is not None:
+            try:
+                await self._store.save(session_id, self._sessions[session_id])
+            except Exception as exc:
+                logger.warning("SessionRiskStore.save failed for %s: %s", session_id, exc)
+
+        return verdict
+
     def risk(self, session_id: str) -> float:
         state = self._sessions.get(session_id)
         return state.risk if state else 0.0
 
     def reset(self, session_id: str) -> None:
-        """Clear state on session end (called by the runtime / agent_reaper)."""
+        """Clear in-process state on session end (called by the runtime / agent_reaper)."""
         self._sessions.pop(session_id, None)
+
+    async def forget(self, session_id: str) -> None:
+        """Clear both in-process and persisted state (session ended / killed)."""
+        self._sessions.pop(session_id, None)
+        if self._store is not None:
+            try:
+                await self._store.delete(session_id)
+            except Exception as exc:
+                logger.warning("SessionRiskStore.delete failed for %s: %s", session_id, exc)
 
     # ------------------------------------------------------------------
     def _score(self, state: SessionRiskState, event: ActionEvent) -> tuple[float, list[str]]:

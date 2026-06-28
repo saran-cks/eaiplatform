@@ -89,7 +89,7 @@ class PdpGuardedMCPConnector:
             required_permissions=spec.required_permissions if spec else frozenset(),
             target_kind=decision.target.kind if decision.target else spec_kind,
         )
-        verdict = self._monitor.observe(sid, event)
+        verdict = await self._monitor.observe_async(sid, event)
 
         # 3. Enforce, strongest veto first.
         if verdict.level is RiskLevel.KILL:

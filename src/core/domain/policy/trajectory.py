@@ -126,3 +126,29 @@ class SessionRiskState:
         self.max_env_level = max(self.max_env_level, ENV_LEVEL.get(event.environment, 0))
         self.seen_permissions |= set(event.required_permissions)
         self.recent_effects.append(event.effect)
+
+    # --- serialization (for the SessionRiskStore port — cross-replica persistence) ---
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "risk": self.risk,
+            "count": self.count,
+            "saw_sensitive_read": self.saw_sensitive_read,
+            "max_env_level": self.max_env_level,
+            "seen_permissions": sorted(self.seen_permissions),
+            "recent_effects": [e.value for e in self.recent_effects],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> SessionRiskState:
+        state = cls(
+            risk=float(data.get("risk", 0.0)),  # type: ignore[arg-type]
+            count=int(data.get("count", 0)),  # type: ignore[arg-type]
+            saw_sensitive_read=bool(data.get("saw_sensitive_read", False)),
+            max_env_level=int(data.get("max_env_level", -1)),  # type: ignore[arg-type]
+            seen_permissions=set(data.get("seen_permissions", [])),  # type: ignore[arg-type]
+        )
+        state.recent_effects = deque(
+            (Effect(e) for e in data.get("recent_effects", [])),  # type: ignore[union-attr]
+            maxlen=DRIFT_WINDOW,
+        )
+        return state

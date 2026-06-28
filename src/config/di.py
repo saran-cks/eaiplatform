@@ -117,7 +117,15 @@ class Container:
         pdp = PolicyDecisionPoint(
             registry=catalog.policy_registry(), target_resolver=resolver
         )
-        monitor = TrajectoryMonitor()
+        # DD-11 risk persisted to Valkey when enabled (cross-worker / restart-safe); otherwise
+        # the monitor accumulates in-process only.
+        store = None
+        if self._settings.risk_store_enabled:
+            from adapters.policy.session_risk_store import ValkeySessionRiskStore
+            store = ValkeySessionRiskStore(
+                self.cache, ttl=self._settings.risk_store_ttl_seconds
+            )
+        monitor = TrajectoryMonitor(store=store)
         # Real ClientSession-backed transport drops in here when mcp_mock_mode is False.
         transport = MockMCPTransport()
         return PdpGuardedMCPConnector(

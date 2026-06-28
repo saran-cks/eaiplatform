@@ -79,6 +79,7 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `tools/{servicenow,confluence,github,zendesk}.py` (read-only; write = FUTURE)
 - [x] **PDP + trajectory-monitor wiring** — connector is the chokepoint; `test_pdp_chokepoint.py` allowlist now `{adapters/mcp/connector.py}` (DD-8/DD-11 have their first caller)
 - [x] **Agent runtime is the chokepoint's runtime caller (Session 14, DD-15)** — `LangGraphRunner` workers fetch via `MCPConnectorPort.call_tool` (DD-8/DD-11 now run on real traffic); `agent_reaper` force-terminates `TrajectoryKill`ed sessions via `AgentKillRegistry`; chokepoint allowlist now two-tier `{connector, langgraph_runner}`.
+- [x] **DD-11 risk persisted to Valkey (Session 15, DD-16)** — `SessionRiskStorePort` + `ValkeySessionRiskStore` over `CachePort`; monitor `observe_async` hydrate/write-back, fail-soft; cross-worker accumulation. `RISK_STORE_ENABLED` off-switch.
 - [ ] `api/routes/mcp.py` + schema — **deferred**: the agent runtime (not an HTTP route) is the caller; adding a route would force allowlisting it. Build if/when a direct tool-exec endpoint is needed.
 
 ### Session 8 — Step 11: observability

@@ -242,3 +242,17 @@ This file tracks the historical sequence of build sessions, architectural additi
 *   **Wiring**: `di.py` adds a shared `agent_kill_registry` and injects `mcp=self.mcp` + the registry into the runner; `main.py` builds `container.agent` at startup (fails fast on a mis-wired chokepoint) and passes agent + registry to `start_daemons`.
 *   **Verification**: new `src/tests/test_agent_mcp_wiring.py` (5) — in-scope workers reach the transport; an under-scoped worker is PDP-denied yet the run completes; a KILL emits `killed` + records the session + never hits the transport; `RunAgentUseCase` persists `KILLED`; the reaper drains the registry and calls `terminate()`. `uv run pytest src/tests -q` -> **79 passed**; changed files ruff-clean; DI + app-factory smoke-checked.
 *   **Deliberately out of scope**: real `ClientSession` transport (ST-3), `api/routes/mcp.py`, DD-10 credential broker / DD-12 approval backend, Redis-backed `SessionRiskStore`, Phoenix spans.
+
+---
+
+## Session 15: DD-11 risk persisted to Valkey — cross-worker / restart-safe — 2026-06-28
+*   **Trigger**: `TrajectoryMonitor` held cumulative risk **in-process** — lost on restart and not shared across workers, so a horizontally-scaled deploy silently defeated DD-11 (the slow attack just spreads calls across processes). `SessionRiskState` was already serializable for this.
+*   **Built**:
+    *   **`core/domain/policy/trajectory.py`** — `SessionRiskState.to_dict()/from_dict()` (handles the `deque[Effect]` + `set` fields) — the "serializable" promise made real.
+    *   **`core/ports/session_risk_store.py`** — `SessionRiskStorePort` (async `load`/`save`/`delete`).
+    *   **`adapters/policy/session_risk_store.py`** — `ValkeySessionRiskStore` over the existing `CachePort` (no second Redis client): JSON under `risk:{session_id}` with a TTL = agent-session window.
+    *   **`TrajectoryMonitor`** — gains optional `store`; sync `observe`/`risk`/`reset` **unchanged** (existing tests untouched); new **`observe_async`** hydrates from the store → scores → writes back, and **`forget`** clears both tiers. The connector now calls `observe_async`.
+*   **Two decisions**: **(a) fail-soft** — a Valkey outage degrades to in-process accumulation (a weaker DD-11) and **never** raises on the action path; security is not bypassed (in-proc still accrues), only cross-worker sharing is lost. **(b) load→modify→save is not atomic** (DD-16): within one agent session tool calls are sequential, so it's sufficient for the threat model; a Lua CAS is FUTURE. Off-switch: `RISK_STORE_ENABLED` (in-process only).
+*   **Wiring**: `di.py` builds `ValkeySessionRiskStore(self.cache, ttl=...)` and injects it into the monitor when `risk_store_enabled`; `RISK_STORE_ENABLED` / `RISK_STORE_TTL_SECONDS` settings + `.env.example`.
+*   **Verification**: new `test_session_risk_store.py` (4) — state round-trip; store save/load/delete over a fake cache; **two monitor instances sharing one backend accumulate across "workers"** (no cross-session bleed); a `FailingCache` proves fail-soft. `uv run pytest src/tests -q` -> **83 passed**; changed files ruff-clean; DI + app-factory smoke-checked.
+*   **Out of scope**: atomic CAS for concurrent same-session writers, wiring `forget` into the `agent_reaper` on kill (trivial follow-up), Phoenix spans.
