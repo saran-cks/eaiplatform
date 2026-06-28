@@ -256,3 +256,16 @@ This file tracks the historical sequence of build sessions, architectural additi
 *   **Wiring**: `di.py` builds `ValkeySessionRiskStore(self.cache, ttl=...)` and injects it into the monitor when `risk_store_enabled`; `RISK_STORE_ENABLED` / `RISK_STORE_TTL_SECONDS` settings + `.env.example`.
 *   **Verification**: new `test_session_risk_store.py` (4) — state round-trip; store save/load/delete over a fake cache; **two monitor instances sharing one backend accumulate across "workers"** (no cross-session bleed); a `FailingCache` proves fail-soft. `uv run pytest src/tests -q` -> **83 passed**; changed files ruff-clean; DI + app-factory smoke-checked.
 *   **Out of scope**: atomic CAS for concurrent same-session writers, wiring `forget` into the `agent_reaper` on kill (trivial follow-up), Phoenix spans.
+
+---
+
+## Session 16: DD-13 Layer 0 — datamarked, spoof-resistant RAG context block — 2026-06-28
+*   **Trigger**: the untrusted-context *framing* already existed in `send_message.py` (+ a regression test), but the structural gate had a real hole: a retrieved chunk containing the literal `----- END CONTEXT -----` line (or a bare dashed rule) could **close the block early** and have everything after it read as trusted instructions. DD-13 calls for a *datamarked* block — that part wasn't built.
+*   **Built** (`core/use_cases/chat/send_message.py`):
+    *   `_neutralize_delimiters(text)` — defangs any chunk line that mimics the begin/end markers or is a bare dashed rule (replaced with a placeholder), so a passage can't forge the boundary.
+    *   `_format_context(chunks)` — renders each chunk **neutralized + datamarked**: every context line is prefixed with a sentinel (`│ `) the system prompt tells the model to trust; text not so prefixed (or mimicking markers) is not trusted context. Replaces the old inline `[{i}] {text}` join.
+    *   System prompt template now built from `_CTX_BEGIN/_CTX_END/_DATAMARK` constants (kept in sync) and explains the datamark rule.
+*   **Why neutralize *and* datamark**: structure is the primary gate (DD-13), but a delimiter you can spoof isn't structure. Neutralization removes the spoof; datamarking gives the model a positive signal for "this region is data." Injected instructions still appear — but inside the block, datamarked, as data.
+*   **Tradeoff**: a legit bare-dashed line (markdown rule) in a chunk is replaced with a placeholder — rare, low harm, worth it for a spoof-proof boundary.
+*   **Verification**: `test_chat_security.py` +3 — every context line carries the datamark; a chunk embedding the END marker leaves exactly **one** real closing marker in the rendered prompt (forgery defanged) while the injected instruction survives *as data*; a bare dashed rule is removed. `uv run pytest src/tests -q` -> **86 passed**. (Two pre-existing E501/RUF005 in untouched lines left per the Session 12 cosmetic-backlog decision.)
+*   **Out of scope**: DD-13 Layer 1 (ingest-time screening — ingestion worker) and Layer 2 (consume the stored `injection_risk` flag at retrieval: down-rank + ⚠-mark flagged chunks) — separate work on the retrieval/ingestion paths.
