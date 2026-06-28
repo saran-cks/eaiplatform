@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from adapters.mcp.catalog import ToolCatalog
@@ -32,12 +33,19 @@ from core.domain.policy.types import (
     TrajectoryKill,
 )
 from core.domain.value_objects.permission_scope import PermissionScope
+from core.ports.observability import ObsAttr, ObservabilityPort, SpanKind
 
 if TYPE_CHECKING:
     from core.use_cases.policy.policy_decision_point import PolicyDecisionPoint
     from core.use_cases.policy.trajectory_monitor import TrajectoryMonitor
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _noop_span():
+    """Fallback when no ObservabilityPort is injected (keeps tests obs-free)."""
+    yield None
 
 
 class PdpGuardedMCPConnector:
@@ -50,11 +58,18 @@ class PdpGuardedMCPConnector:
         pdp: PolicyDecisionPoint,
         monitor: TrajectoryMonitor,
         transport: MCPTransportPort,
+        observability: ObservabilityPort | None = None,
     ) -> None:
         self._catalog = catalog
         self._pdp = pdp
         self._monitor = monitor
         self._transport = transport
+        self._obs = observability
+
+    def _span(self, name: str, attributes: Mapping[str, Any]):
+        if self._obs is None:
+            return _noop_span()
+        return self._obs.span(name, kind=SpanKind.TOOL, attributes=attributes)
 
     async def connect(self, *, server: str, tenant_id: str) -> None:
         # Mock transport is sessionless; real MCP transport will open a session here.
@@ -91,31 +106,55 @@ class PdpGuardedMCPConnector:
         )
         verdict = await self._monitor.observe_async(sid, event)
 
-        # 3. Enforce, strongest veto first.
-        if verdict.level is RiskLevel.KILL:
-            logger.warning(
-                "MCP call '%s' killed by trajectory monitor (session=%s risk=%.2f signals=%s)",
-                name, sid, verdict.risk, verdict.signals,
-            )
-            raise TrajectoryKill(
-                f"session {sid} risk {verdict.risk:.2f} crossed KILL ({', '.join(verdict.signals)})"
-            )
-        if not decision.allowed:
-            logger.warning("MCP call '%s' denied by PDP: %s", name, decision.reason)
-            raise PolicyViolation(decision.reason)
-        if verdict.level is RiskLevel.REQUIRE_APPROVAL:
-            logger.warning(
-                "MCP call '%s' needs re-approval by trajectory monitor (session=%s risk=%.2f)",
-                name, sid, verdict.risk,
-            )
-            raise PolicyViolation(
-                f"trajectory risk {verdict.risk:.2f} requires re-approval"
-            )
-
-        # 4. Cleared. Now — and only now — touch the external transport.
+        # Forensic span (DD-8/DD-11): one TOOL span carries the decision, the cumulative
+        # session risk, and the outcome — denied/killed calls record an ERROR span too.
         server = self._catalog.server_for(name) or "unknown"
-        logger.info("MCP call '%s' ALLOWED (session=%s risk=%.2f)", name, sid, verdict.risk)
-        return await self._transport.call_tool(server=server, name=name, arguments=arguments)
+        attributes: dict[str, Any] = {
+            ObsAttr.TOOL_NAME: name,
+            ObsAttr.TOOL_SERVER: server,
+            ObsAttr.TOOL_ARGUMENTS: dict(arguments),
+            ObsAttr.SESSION_ID: sid,
+            ObsAttr.TENANT_ID: scope.tenant_id,
+            ObsAttr.POLICY_DECISION: decision.effect.value,
+            ObsAttr.POLICY_REASON: decision.reason,
+            ObsAttr.POLICY_ENVIRONMENT: event.environment,
+            ObsAttr.POLICY_TARGET: decision.target.resource_id if decision.target else None,
+            ObsAttr.RISK_LEVEL: verdict.level.value,
+            ObsAttr.RISK_SCORE: verdict.risk,
+            ObsAttr.RISK_SIGNALS: list(verdict.signals),
+        }
+
+        async with self._span(f"mcp.tool.{name}", attributes) as span:
+            # 3. Enforce, strongest veto first.
+            if verdict.level is RiskLevel.KILL:
+                logger.warning(
+                    "MCP call '%s' killed by trajectory monitor (session=%s risk=%.2f signals=%s)",
+                    name, sid, verdict.risk, verdict.signals,
+                )
+                raise TrajectoryKill(
+                    f"session {sid} risk {verdict.risk:.2f} crossed KILL "
+                    f"({', '.join(verdict.signals)})"
+                )
+            if not decision.allowed:
+                logger.warning("MCP call '%s' denied by PDP: %s", name, decision.reason)
+                raise PolicyViolation(decision.reason)
+            if verdict.level is RiskLevel.REQUIRE_APPROVAL:
+                logger.warning(
+                    "MCP call '%s' needs re-approval by trajectory monitor (session=%s risk=%.2f)",
+                    name, sid, verdict.risk,
+                )
+                raise PolicyViolation(
+                    f"trajectory risk {verdict.risk:.2f} requires re-approval"
+                )
+
+            # 4. Cleared. Now — and only now — touch the external transport.
+            logger.info("MCP call '%s' ALLOWED (session=%s risk=%.2f)", name, sid, verdict.risk)
+            result = await self._transport.call_tool(
+                server=server, name=name, arguments=arguments
+            )
+            if span is not None:
+                span.set_attribute(ObsAttr.OUTPUT, result.get("result", result))
+            return result
 
     async def disconnect(self, *, server: str, tenant_id: str) -> None:
         logger.debug("MCP disconnect requested (server=%s tenant=%s)", server, tenant_id)

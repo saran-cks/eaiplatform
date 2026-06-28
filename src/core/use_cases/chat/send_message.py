@@ -15,10 +15,14 @@ All I/O is async; no blocking calls on the event loop.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import random
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from core.domain.entities.message import Message, Role, Turn
 from core.domain.entities.session import Session
@@ -27,10 +31,20 @@ from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.cache import CachePort
 from core.ports.guard import GuardPort
 from core.ports.llm import LLMPort
+from core.ports.observability import ObsAttr, ObservabilityPort, SpanKind
 from core.ports.retriever import RetrieverPort
 from core.ports.store import StorePort
 
+if TYPE_CHECKING:
+    from core.use_cases.observability.evaluate_turn import EvaluateTurnUseCase
+
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _noop_span():
+    """Fallback span when no ObservabilityPort is injected (keeps existing tests obs-free)."""
+    yield None
 
 # Shown to the user when the prompt guard blocks the query (or screening fails closed).
 _GUARD_REFUSAL = (
@@ -92,6 +106,21 @@ def _format_context(chunks: list) -> str:
     return "\n\n".join(blocks)
 
 
+def _chunks_as_docs(chunks: list) -> list[dict[str, object]]:
+    """Project retrieved chunks into the neutral retrieval-document shape for tracing."""
+    docs: list[dict[str, object]] = []
+    for c in chunks:
+        docs.append(
+            {
+                "id": getattr(c, "chunk_id", None),
+                "content": getattr(c, "text", ""),
+                "score": getattr(c, "score", None),
+                "metadata": getattr(c, "metadata", None),
+            }
+        )
+    return docs
+
+
 def _build_cache_key(query: str, tenant_id: str, permissions: frozenset[str]) -> str:
     """Build a cache key containing query, tenant, and the exact permission boundaries."""
     sorted_perms = ",".join(sorted(list(permissions)))
@@ -112,6 +141,9 @@ class SendChatMessageUseCase:
         guard: GuardPort,
         retrieval_top_k: int,
         cache_response_ttl: int,
+        observability: ObservabilityPort | None = None,
+        evaluator: EvaluateTurnUseCase | None = None,
+        eval_sample_rate: float = 0.0,
     ) -> None:
         self._store = store
         self._cache = cache
@@ -120,6 +152,15 @@ class SendChatMessageUseCase:
         self._guard = guard
         self._retrieval_top_k = retrieval_top_k
         self._cache_response_ttl = cache_response_ttl
+        self._obs = observability
+        self._evaluator = evaluator
+        self._eval_sample_rate = eval_sample_rate
+        self._eval_tasks: set[asyncio.Task[None]] = set()
+
+    def _span(self, name: str, kind: SpanKind, attributes: dict[str, object]):
+        if self._obs is None:
+            return _noop_span()
+        return self._obs.span(name, kind=kind, attributes=attributes)
 
     async def execute(
         self,
@@ -133,16 +174,35 @@ class SendChatMessageUseCase:
 
         Callers MUST consume the entire iterator to ensure Turn persistence.
         """
+        sid = session.session_id
+        base_attrs: dict[str, object] = {
+            ObsAttr.SESSION_ID: sid,
+            ObsAttr.TENANT_ID: scope.tenant_id,
+        }
+        if scope.subject_id:
+            base_attrs[ObsAttr.USER_ID] = scope.subject_id
+
         # --- step 0: screen the user query (first line of defence; fail-closed) ---
         # A malicious query must not reach the cache, retrieval, or the LLM.
-        try:
-            verdict = await self._guard.screen(query)
-        except Exception as exc:
-            logger.error(
-                "Guard screening unavailable for session %s; failing closed: %s",
-                session.session_id, exc,
-            )
-            verdict = GuardVerdict.refuse()
+        async with self._span(
+            "chat.guard", SpanKind.GUARDRAIL, {**base_attrs, ObsAttr.INPUT: query}
+        ) as gspan:
+            try:
+                verdict = await self._guard.screen(query)
+            except Exception as exc:
+                logger.error(
+                    "Guard screening unavailable for session %s; failing closed: %s",
+                    session.session_id, exc,
+                )
+                verdict = GuardVerdict.refuse()
+            if gspan is not None:
+                gspan.set_attributes(
+                    {
+                        ObsAttr.GUARD_BLOCKED: verdict.blocked,
+                        ObsAttr.GUARD_LABEL: verdict.label,
+                        ObsAttr.GUARD_SCORE: verdict.score,
+                    }
+                )
         if verdict.blocked:
             logger.warning(
                 "Query blocked by prompt guard (session=%s, tenant=%s, label=%s, score=%.4f)",
@@ -190,23 +250,40 @@ class SendChatMessageUseCase:
                 return
 
         # --- step 2: embed the query (fail-closed) ---
-        try:
-            query_vector = await self._retriever.embed(query)
-        except Exception as exc:
-            logger.error("Embedding failed for session %s: %s", session.session_id, exc)
-            raise RuntimeError(f"Embedding service unavailable: {exc}") from exc
+        async with self._span(
+            "chat.embed", SpanKind.EMBEDDING, {**base_attrs, ObsAttr.EMBEDDING_TEXT: query}
+        ) as espan:
+            try:
+                query_vector = await self._retriever.embed(query)
+            except Exception as exc:
+                logger.error("Embedding failed for session %s: %s", session.session_id, exc)
+                raise RuntimeError(f"Embedding service unavailable: {exc}") from exc
+            if espan is not None:
+                # The vector here powers Phoenix's embedding/UMAP view and the drift signal.
+                espan.set_attribute(ObsAttr.EMBEDDING_VECTOR, list(query_vector))
 
         # --- step 3: hybrid search (fail-closed) ---
-        try:
-            retrieval_result = await self._retriever.search(
-                query=query_vector,
-                scope=scope,
-                top_k=self._retrieval_top_k,
-            )
-            retrieved_chunks = retrieval_result.chunks
-        except Exception as exc:
-            logger.error("Retrieval failed for session %s: %s", session.session_id, exc)
-            raise RuntimeError(f"Retrieval service unavailable: {exc}") from exc
+        async with self._span(
+            "chat.retrieval",
+            SpanKind.RETRIEVER,
+            {
+                **base_attrs,
+                ObsAttr.RETRIEVAL_QUERY: query,
+                ObsAttr.RETRIEVAL_TOP_K: self._retrieval_top_k,
+            },
+        ) as rspan:
+            try:
+                retrieval_result = await self._retriever.search(
+                    query=query_vector,
+                    scope=scope,
+                    top_k=self._retrieval_top_k,
+                )
+                retrieved_chunks = retrieval_result.chunks
+            except Exception as exc:
+                logger.error("Retrieval failed for session %s: %s", session.session_id, exc)
+                raise RuntimeError(f"Retrieval service unavailable: {exc}") from exc
+            if rspan is not None:
+                rspan.set_attribute(ObsAttr.RETRIEVAL_DOCUMENTS, _chunks_as_docs(retrieved_chunks))
 
         # --- step 4: build context and system prompt (DD-13 L0: neutralized + datamarked) ---
         context_text = _format_context(retrieved_chunks)
@@ -219,20 +296,36 @@ class SendChatMessageUseCase:
             content=query,
             created_at=datetime.now(tz=UTC),
         )
-        all_messages = list(history) + [user_message]
+        all_messages = [*history, user_message]
 
         # --- step 5: stream LLM response (fail-closed propagation) ---
         collected_tokens: list[str] = []
-        try:
-            async for token in self._llm.stream(
-                messages=all_messages,
-                system=system_prompt,
-            ):
-                collected_tokens.append(token)
-                yield token
-        except Exception as exc:
-            logger.error("LLM stream failed for session %s: %s", session.session_id, exc)
-            raise RuntimeError(f"LLM stream failed or was interrupted: {exc}") from exc
+        llm_span_id: str | None = None
+        async with self._span(
+            "chat.llm",
+            SpanKind.LLM,
+            {
+                **base_attrs,
+                ObsAttr.INPUT: query,
+                ObsAttr.LLM_INPUT_MESSAGES: [{"role": "user", "content": query}],
+            },
+        ) as lspan:
+            if lspan is not None:
+                llm_span_id = lspan.span_id
+            try:
+                async for token in self._llm.stream(
+                    messages=all_messages,
+                    system=system_prompt,
+                ):
+                    collected_tokens.append(token)
+                    yield token
+            except Exception as exc:
+                logger.error("LLM stream failed for session %s: %s", session.session_id, exc)
+                raise RuntimeError(f"LLM stream failed or was interrupted: {exc}") from exc
+            if lspan is not None:
+                lspan.set_attributes(
+                    {ObsAttr.LLM_OUTPUT: "".join(collected_tokens)}
+                )
 
         # --- step 6: assemble full assistant response ---
         assistant_text = "".join(collected_tokens)
@@ -265,3 +358,29 @@ class SendChatMessageUseCase:
                 ttl=self._cache_response_ttl,
             )
         await self._cache.evict(f"session:{session.session_id}:history")
+
+        # --- step 9: online eval (sampled, fire-and-forget; never blocks the response) ---
+        self._maybe_schedule_eval(
+            span_id=llm_span_id, query=query, context_text=context_text, answer=assistant_text
+        )
+
+    def _maybe_schedule_eval(
+        self, *, span_id: str | None, query: str, context_text: str, answer: str
+    ) -> None:
+        if self._evaluator is None or not span_id or self._eval_sample_rate <= 0.0:
+            return
+        if random.random() > self._eval_sample_rate:
+            return
+        evaluator = self._evaluator
+
+        async def _run() -> None:
+            try:
+                await evaluator.evaluate(
+                    span_id=span_id, question=query, context=context_text, answer=answer
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("online eval failed for span %s: %s", span_id, exc)
+
+        task = asyncio.create_task(_run())
+        self._eval_tasks.add(task)
+        task.add_done_callback(self._eval_tasks.discard)

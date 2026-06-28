@@ -22,6 +22,7 @@ from api.middleware.telemetry import TelemetryMiddleware
 from api.routes.agent import router as agent_router
 from api.routes.chat import router as chat_router
 from api.routes.health import router as health_router
+from api.routes.observability import router as observability_router
 from api.routes.search import router as search_router
 from config.di import build_container
 from config.settings import Settings, get_settings
@@ -77,6 +78,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         service_name=settings.otel_service_name,
         environment=settings.app_env,
         otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+        autoinstrument=settings.otel_autoinstrument,
     )
     # The agent_reaper needs the agent port + the shared DD-11 kill registry to force-terminate
     # sessions the trajectory monitor killed. Building the agent here also fails fast on a
@@ -124,6 +126,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.warning("Error closing mcp connector: %s", exc)
 
+    if "observability" in container.__dict__:
+        try:
+            await container.observability.close()
+        except Exception as exc:
+            logger.warning("Error closing observability adapter: %s", exc)
+
     logger.info("%s stopped", settings.app_name)
 
 
@@ -163,6 +171,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search_router)
     app.include_router(chat_router)
     app.include_router(agent_router)
+    app.include_router(observability_router)
 
     return app
 

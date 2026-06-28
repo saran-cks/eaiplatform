@@ -11,6 +11,7 @@ import asyncio
 import logging
 import operator
 from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.runnables import RunnableConfig
@@ -27,8 +28,15 @@ from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.agent import AgentPort
 from core.ports.llm import LLMPort
 from core.ports.mcp_connector import MCPConnectorPort
+from core.ports.observability import ObsAttr, ObservabilityPort, SpanKind
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _noop_span():
+    """Fallback when no ObservabilityPort is injected (keeps tests obs-free)."""
+    yield None
 
 
 def _find_kill(exc: BaseException | None) -> TrajectoryKill | None:
@@ -74,6 +82,7 @@ class LangGraphRunner(AgentPort):
         peer_registry: Any = None,
         mcp: MCPConnectorPort | None = None,
         kill_registry: AgentKillRegistry | None = None,
+        observability: ObservabilityPort | None = None,
     ) -> None:
         self._settings = settings
         self._llm = llm
@@ -82,6 +91,7 @@ class LangGraphRunner(AgentPort):
         # when absent (unit tests) workers fall back to simulated content.
         self._mcp = mcp
         self._kill_registry = kill_registry
+        self._obs = observability
 
         # Interrupted sessions registry (cooperative cancellation)
         self._interrupted: set[str] = set()
@@ -391,6 +401,21 @@ class LangGraphRunner(AgentPort):
         """Run the state graph and yield events for SSE."""
         return self._run_generator(agent_session, prompt, scope)
 
+    def _agent_span(self, sid: str, scope: PermissionScope, prompt: str):
+        """Root AGENT span for the run. Opening it as the current span before the graph
+        task is created lets the connector's per-tool spans (DD-8/DD-11 forensics) nest
+        under it — contextvars propagate into ``create_task``."""
+        if self._obs is None:
+            return _noop_span()
+        attrs: dict[str, Any] = {
+            ObsAttr.SESSION_ID: sid,
+            ObsAttr.TENANT_ID: scope.tenant_id,
+            ObsAttr.INPUT: prompt,
+        }
+        if scope.subject_id:
+            attrs[ObsAttr.USER_ID] = scope.subject_id
+        return self._obs.span(f"agent.run.{sid}", kind=SpanKind.AGENT, attributes=attrs)
+
     async def _run_generator(
         self,
         agent_session: AgentSession,
@@ -402,63 +427,73 @@ class LangGraphRunner(AgentPort):
         # Clear previous interrupt flags if any
         self._interrupted.discard(sid)
 
-        queue: asyncio.Queue[Mapping[str, Any]] = asyncio.Queue()
-        initial_state = AgentState(
-            agent_session_id=sid,
-            prompt=prompt,
-            sources_to_query=[],
-            sub_agent_results=[],
-            final_synthesis="",
-            iteration_count=0,
-            truncated=False,
-        )
+        async with self._agent_span(sid, scope, prompt) as aspan:
+            queue: asyncio.Queue[Mapping[str, Any]] = asyncio.Queue()
+            initial_state = AgentState(
+                agent_session_id=sid,
+                prompt=prompt,
+                sources_to_query=[],
+                sub_agent_results=[],
+                final_synthesis="",
+                iteration_count=0,
+                truncated=False,
+            )
 
-        config = {
-            "configurable": {
-                "queue": queue,
-                "scope": scope,  # workers fetch through the PDP chokepoint with this scope
-                "max_concurrency": self._settings.agent_max_concurrency,
+            config = {
+                "configurable": {
+                    "queue": queue,
+                    "scope": scope,  # workers fetch through the PDP chokepoint with this scope
+                    "max_concurrency": self._settings.agent_max_concurrency,
+                }
             }
-        }
 
-        # Run the graph as a background task so we can consume the queue concurrently
-        task = asyncio.create_task(self._graph.ainvoke(initial_state, config))
-        self._tasks[sid] = task
+            # Run the graph as a background task so we can consume the queue concurrently
+            task = asyncio.create_task(self._graph.ainvoke(initial_state, config))
+            self._tasks[sid] = task
 
-        try:
-            while not task.done() or not queue.empty():
-                try:
-                    # Poll queue to yield values
-                    item = await asyncio.wait_for(queue.get(), timeout=0.05)
-                    yield item
-                except TimeoutError:
-                    continue
+            try:
+                while not task.done() or not queue.empty():
+                    try:
+                        # Poll queue to yield values
+                        item = await asyncio.wait_for(queue.get(), timeout=0.05)
+                        yield item
+                    except TimeoutError:
+                        continue
 
-            # If task finished with exception, propagate it. A trajectory KILL (DD-11) is
-            # special: record it for the reaper and emit a terminal `killed` event so the
-            # client learns *why* before the exception tears the stream down.
-            if task.done() and task.exception() is not None:
-                exc = task.exception()
-                kill = _find_kill(exc)
-                if kill is not None:
-                    reason = str(kill)
-                    if self._kill_registry is not None:
-                        self._kill_registry.record(sid, reason)
-                    logger.warning("LangGraphRunner: session %s KILLED (DD-11): %s", sid, reason)
-                    yield {
-                        "event": "killed",
-                        "data": {"reason": reason, "source": "trajectory-monitor"},
-                    }
-                    raise kill
-                raise exc  # type: ignore[misc]
+                # If task finished with exception, propagate it. A trajectory KILL (DD-11) is
+                # special: record it for the reaper and emit a terminal `killed` event so the
+                # client learns *why* before the exception tears the stream down.
+                if task.done() and task.exception() is not None:
+                    exc = task.exception()
+                    kill = _find_kill(exc)
+                    if kill is not None:
+                        reason = str(kill)
+                        if self._kill_registry is not None:
+                            self._kill_registry.record(sid, reason)
+                        logger.warning(
+                            "LangGraphRunner: session %s KILLED (DD-11): %s", sid, reason
+                        )
+                        yield {
+                            "event": "killed",
+                            "data": {"reason": reason, "source": "trajectory-monitor"},
+                        }
+                        raise kill
+                    raise exc  # type: ignore[misc]
 
-        except asyncio.CancelledError:
-            logger.info("LangGraphRunner.run: Task cancelled cooperatively for session %s", sid)
-            task.cancel()
-            raise
-        finally:
-            self._tasks.pop(sid, None)
-            self._interrupted.discard(sid)
+                if aspan is not None and task.done() and task.exception() is None:
+                    result = task.result()
+                    if isinstance(result, Mapping):
+                        aspan.set_attribute(ObsAttr.OUTPUT, result.get("final_synthesis", ""))
+
+            except asyncio.CancelledError:
+                logger.info(
+                    "LangGraphRunner.run: Task cancelled cooperatively for session %s", sid
+                )
+                task.cancel()
+                raise
+            finally:
+                self._tasks.pop(sid, None)
+                self._interrupted.discard(sid)
 
     async def register_tool(self, *, agent_session_id: str, tool_name: str) -> None:
         """Stub for tool registration (filtering handled by use case)."""

@@ -24,6 +24,19 @@ dependencies = [
     "opentelemetry-sdk>=1.29",
     "opentelemetry-exporter-otlp-proto-grpc>=1.29",
     "opentelemetry-instrumentation-fastapi>=0.50b0",
+    # Observability backend (Phoenix): lightweight client + OpenInference conventions only.
+    # The Phoenix server runs as a Docker service — we never embed it (no heavy `arize-phoenix`).
+    "arize-phoenix-client>=2.10",
+    "openinference-semantic-conventions>=0.1.28",
+    "openinference-instrumentation>=0.1.20",
+]
+
+[project.optional-dependencies]
+# Opt-in OpenInference auto-instrumentation (OTEL_AUTOINSTRUMENT=true). Kept optional so the
+# default image stays lean; the explicit, port-driven domain spans are the primary signal.
+autoinstrument = [
+    "openinference-instrumentation-bedrock>=0.1.42",
+    "openinference-instrumentation-langchain>=0.1.66",
 ]
 
 [dependency-groups]

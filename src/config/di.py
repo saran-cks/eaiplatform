@@ -17,6 +17,7 @@ from this container only.
 from __future__ import annotations
 
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 from config.settings import Settings, get_settings
 from core.domain.agent_control import AgentKillRegistry
@@ -29,6 +30,9 @@ from core.ports.observability import ObservabilityPort
 from core.ports.queue import QueuePort
 from core.ports.retriever import RetrieverPort
 from core.ports.store import StorePort
+
+if TYPE_CHECKING:
+    from core.use_cases.observability.evaluate_turn import EvaluateTurnUseCase
 
 
 class AdapterNotWired(NotImplementedError):
@@ -97,6 +101,7 @@ class Container:
             peer_registry=registry,
             mcp=self.mcp,
             kill_registry=self.agent_kill_registry,
+            observability=self.observability,
         )
 
     # --- MCP (Session 7) — PDP-guarded; first real caller of DD-8 + DD-11 ---
@@ -129,14 +134,32 @@ class Container:
         # Real ClientSession-backed transport drops in here when mcp_mock_mode is False.
         transport = MockMCPTransport()
         return PdpGuardedMCPConnector(
-            catalog=catalog, pdp=pdp, monitor=monitor, transport=transport
+            catalog=catalog,
+            pdp=pdp,
+            monitor=monitor,
+            transport=transport,
+            observability=self.observability,
         )
 
-    # --- observability (Session 8) ---
+    # --- observability (Session 8) — Phoenix when OTel is on, else a safe no-op ---
     @cached_property
     def observability(self) -> ObservabilityPort:
-        raise AdapterNotWired(
-            "ObservabilityPort — adapters/observability/phoenix/ (Session 8, build step 11)"
+        if not self._settings.otel_enabled:
+            from adapters.observability.noop import NoOpObservability
+            return NoOpObservability()
+        from adapters.observability.phoenix import PhoenixObservabilityAdapter
+        return PhoenixObservabilityAdapter(self._settings, cache=self.cache)
+
+    @cached_property
+    def evaluator(self) -> EvaluateTurnUseCase | None:
+        """Online LLM-judge eval runner (Phoenix-comparable). None unless EVAL_ENABLED."""
+        if not self._settings.eval_enabled:
+            return None
+        from core.use_cases.observability.evaluate_turn import EvaluateTurnUseCase
+        return EvaluateTurnUseCase(
+            llm=self.llm,
+            observability=self.observability,
+            judge_model=self._settings.bedrock_fast_model_id,
         )
 
     # --- queue (Session 3+) ---

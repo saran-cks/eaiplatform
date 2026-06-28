@@ -199,6 +199,9 @@ async def send_message(
         guard=container.guard,
         retrieval_top_k=settings.retrieval_top_k,
         cache_response_ttl=settings.cache_response_ttl,
+        observability=container.observability,
+        evaluator=container.evaluator,
+        eval_sample_rate=settings.eval_sample_rate,
     )
 
     # 4. Build the SSE generator

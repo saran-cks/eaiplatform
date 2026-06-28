@@ -38,6 +38,7 @@ def init_otel(
     service_name: str,
     environment: str,
     otlp_endpoint: str,
+    autoinstrument: bool = False,
 ) -> None:
     """Bootstrap OpenTelemetry providers and instrument FastAPI.
 
@@ -47,6 +48,11 @@ def init_otel(
 
     When ``enabled`` is False the function returns immediately, leaving the global
     no-op providers in place (zero overhead).
+
+    ``autoinstrument`` opt-in additionally turns on OpenInference auto-instrumentation
+    for Bedrock and LangChain/LangGraph (each attached to *this* provider). It is a
+    bonus signal layer on top of the explicit, port-driven domain spans — kept optional
+    because the explicit spans are the architecturally load-bearing ones.
     """
     if not enabled:
         logger.info("OpenTelemetry disabled (OTEL_ENABLED=false)")
@@ -56,6 +62,9 @@ def init_otel(
         {
             "service.name": service_name,
             "deployment.environment": environment,
+            # Phoenix routes spans to a project by this resource attribute (falls back to
+            # "default" if absent). Keep it == service_name so the read-side project id matches.
+            "openinference.project.name": service_name,
         }
     )
 
@@ -69,14 +78,46 @@ def init_otel(
     metric_exporter = OTLPMetricExporter(endpoint=otlp_endpoint, insecure=True)
     meter_provider = MeterProvider(
         resource=resource,
-        metric_readers=[PeriodicExportingMetricReader(metric_exporter, export_interval_millis=15000)],
+        metric_readers=[
+            PeriodicExportingMetricReader(metric_exporter, export_interval_millis=15000)
+        ],
     )
     metrics.set_meter_provider(meter_provider)
 
     # --- FastAPI auto-instrumentation ---
     FastAPIInstrumentor.instrument_app(app)
 
-    logger.info("OpenTelemetry initialised: traces+metrics -> %s", otlp_endpoint)
+    if autoinstrument:
+        _enable_autoinstrumentation(tracer_provider)
+
+    logger.info(
+        "OpenTelemetry initialised: traces+metrics -> %s (autoinstrument=%s)",
+        otlp_endpoint, autoinstrument,
+    )
+
+
+def _enable_autoinstrumentation(tracer_provider: TracerProvider) -> None:
+    """Best-effort OpenInference auto-instrumentation for Bedrock + LangChain/LangGraph.
+
+    Each instrumentor is optional and isolated: a missing package or a failure to attach
+    is logged and skipped, never fatal — auto-instrumentation is a bonus over the explicit
+    domain spans the Phoenix adapter emits via the ObservabilityPort.
+    """
+    try:
+        from openinference.instrumentation.bedrock import BedrockInstrumentor
+
+        BedrockInstrumentor().instrument(tracer_provider=tracer_provider)
+        logger.info("OpenInference: Bedrock auto-instrumentation enabled")
+    except Exception as exc:  # pragma: no cover - depends on optional dep
+        logger.warning("Bedrock auto-instrumentation unavailable: %s", exc)
+
+    try:
+        from openinference.instrumentation.langchain import LangChainInstrumentor
+
+        LangChainInstrumentor().instrument(tracer_provider=tracer_provider)
+        logger.info("OpenInference: LangChain/LangGraph auto-instrumentation enabled")
+    except Exception as exc:  # pragma: no cover - depends on optional dep
+        logger.warning("LangChain auto-instrumentation unavailable: %s", exc)
 
 
 def shutdown_otel() -> None:

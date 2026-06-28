@@ -109,6 +109,15 @@ class Settings(BaseSettings):
         "http://phoenix:4317", alias="OTEL_EXPORTER_OTLP_ENDPOINT"
     )
     phoenix_http_endpoint: str = Field("http://phoenix:6006", alias="PHOENIX_HTTP_ENDPOINT")
+    # Self-hosted Phoenix is usually unauthenticated on the internal network; set for Phoenix Cloud.
+    phoenix_api_key: str = Field("", alias="PHOENIX_API_KEY")
+    # Bonus: OpenInference auto-instrumentation for Bedrock + LangChain/LangGraph (on top of
+    # the explicit, port-driven domain spans). Off by default; the explicit spans are primary.
+    otel_autoinstrument: bool = Field(False, alias="OTEL_AUTOINSTRUMENT")
+    # Online LLM-judge evals (faithfulness/QA/relevance) on a sampled fraction of chat turns.
+    # Off by default — they cost an extra judge call per sampled turn. 0.0..1.0 sample rate.
+    eval_enabled: bool = Field(False, alias="EVAL_ENABLED")
+    eval_sample_rate: float = Field(0.0, alias="EVAL_SAMPLE_RATE")
 
     # --- Cache TTLs (seconds) ---
     cache_response_ttl: int = Field(3600, alias="CACHE_RESPONSE_TTL")

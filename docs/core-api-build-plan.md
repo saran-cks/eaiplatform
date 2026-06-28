@@ -82,11 +82,13 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] **DD-11 risk persisted to Valkey (Session 15, DD-16)** — `SessionRiskStorePort` + `ValkeySessionRiskStore` over `CachePort`; monitor `observe_async` hydrate/write-back, fail-soft; cross-worker accumulation. `RISK_STORE_ENABLED` off-switch.
 - [ ] `api/routes/mcp.py` + schema — **deferred**: the agent runtime (not an HTTP route) is the caller; adding a route would force allowlisting it. Build if/when a direct tool-exec endpoint is needed.
 
-### Session 8 — Step 11: observability
-- [ ] `observability/{otel,spans,metrics,drift}.py` full
-- [ ] `adapters/observability/phoenix/{client,otel_exporter,drift,evals,datasets}.py`
-- [ ] `core/use_cases/observability/get_phoenix_data.py`
-- [ ] `api/routes/observability.py` + `feedback.py` + schemas
+### Session 8 — Step 11: observability  ✅ DONE (Session 17, DD-17)
+- [x] `observability/{otel,metrics,drift}.py` — neutral OTLP bootstrap (+ opt-in auto-instrument), OTel metrics, pure drift math. (`spans` logic lives in the adapter to keep OpenInference out of the neutral layer.)
+- [x] `adapters/observability/phoenix/{client,tracing,semconv,drift}.py` + `noop.py` — lightweight Phoenix adapter (OpenInference traces, Sessions, evals/datasets via `arize-phoenix-client`, drift). No heavy `arize-phoenix`/pandas.
+- [x] `core/use_cases/observability/{get_phoenix_data,evaluate_turn}.py` — read facade + LLM-judge eval panel (via `LLMPort`).
+- [x] `api/routes/observability.py` + `/feedback` + schemas — traces/evals/datasets/drift reads + human annotation.
+- [x] **Vendor-neutral `ObservabilityPort` (DD-17)** — Langfuse swap = new adapter + DI rebind; producers (MCP connector, chat pipeline, agent runner) instrumented through the port, fail-soft.
+- [ ] Live Phoenix verification (UI render, Sessions, evals, drift, auto-instrument) — **smoke-tests ST-4 (PENDING)**.
 
 ### Session 9 — Step 12: dashboard
 - [ ] `api/routes/dashboard.py` (SSE drilldown, rate-limited) + schema

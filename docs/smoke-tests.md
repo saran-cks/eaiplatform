@@ -122,3 +122,44 @@ connector lands (replacing `MockMCPTransport` behind `MCPTransportPort`).
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+## ST-4: Phoenix observability — live traces, Sessions, evals, drift — added 2026-06-28 — **PENDING**
+
+Wired in Session 17 (`docs/core-api-dev-log.md`, DD-17). Unit tests use an in-memory OTel
+exporter + fakes; what's unverified is the **real self-hosted Phoenix server** + the installed
+client deps. Run after `uv sync` (pulls `arize-phoenix-client`, `openinference-semantic-conventions`,
+`openinference-instrumentation`) with the `phoenix` Docker service up (`OTEL_ENABLED=true`).
+
+### What to verify
+1. **Traces render.** Drive a chat turn and an agent run; confirm spans appear in the Phoenix
+   project named by `OTEL_SERVICE_NAME`, with correct kinds (LLM/RETRIEVER/EMBEDDING/TOOL/AGENT/
+   GUARDRAIL) and OpenInference fields (model, token counts, retrieved documents, tool args).
+2. **Sessions grouping.** All spans of one chat/agent run group under a single Session
+   (`session.id`); cumulative tokens/turns show on the Session.
+3. **PDP/trajectory forensics.** A denied or killed `call_tool` shows an ERROR `TOOL` span with
+   `policy.decision` / `risk.level` / `risk.score` / `risk.signals` attributes.
+4. **Embedding view + drift.** Retrieval spans carry `embedding.vector`; the Phoenix embedding/UMAP
+   view populates. `GET /observability/drift` returns `warming_up` then `ok` with a cosine/euclidean
+   distance as query traffic accrues.
+5. **Evals.** With `EVAL_ENABLED=true` + `EVAL_SAMPLE_RATE>0`, sampled turns get Hallucination/
+   QA Correctness/Relevance/Toxicity annotations (annotator=LLM) on the LLM span. `POST /feedback`
+   adds a HUMAN annotation. Both render as evals in the UI and via `GET /observability/evals`.
+6. **Datasets.** `curate_dataset` appends examples to a named Phoenix dataset (`GET /observability/datasets`).
+7. **Auto-instrumentation (optional).** With `OTEL_AUTOINSTRUMENT=true` (extra `autoinstrument`
+   installed), Bedrock + LangGraph node spans appear automatically alongside the explicit spans.
+8. **Fail-soft.** Stop the Phoenix container mid-traffic; chat/agents keep working (spans buffer/drop,
+   read endpoints return empty) — no request-path errors.
+
+### Record outcome here
+- [x] Run on 2026-06-28 (local Phoenix container, `localhost:4317`/`:6006`) — **PASS** for items
+  1, 2, 3, 5, 6 via an end-to-end script (`adapters/observability/phoenix/` against the real server):
+  6 spans emitted with correct kinds (AGENT/LLM/TOOL/RETRIEVER/EMBEDDING/GUARDRAIL), all grouped
+  under one `session.id`; `record_eval` annotation (`Hallucination=factual/1.0`) attached and read
+  back; `curate_dataset` created a dataset; `drift_check` returned `ok` (cosine 0.086 / euclid 0.244).
+  Still to eyeball in the UI: item 4 (UMAP view) and item 7 (auto-instrumentation, `extra=autoinstrument`).
+- **Two fixes found & applied during the live run:**
+  1. **Project routing** — this Phoenix version (server `arizephoenix/phoenix`, client 2.10) routes
+     spans to a project by the **`openinference.project.name`** resource attribute, *not* `service.name`.
+     `observability/otel.py` now sets both (== `OTEL_SERVICE_NAME`) so the read-side project id matches.
+  2. **Dataset shape** — the client's `create_dataset`/`add_examples_to_dataset` take parallel
+     `inputs=`/`outputs=`/`metadata=` iterables (not `examples=`); `curate_dataset` adapts to that.
