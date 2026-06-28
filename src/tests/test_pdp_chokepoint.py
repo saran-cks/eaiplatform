@@ -14,9 +14,10 @@ from pathlib import Path
 
 SRC_ROOT = Path(__file__).resolve().parent.parent
 
-# Modules permitted to invoke a write-capable tool directly. Each MUST route via the PDP.
-# Empty until the PDP-guarded MCP adapter is built; add it here (and only it) then.
-_ALLOWLIST: frozenset[str] = frozenset()
+# Modules permitted to invoke a tool transport directly. Each MUST route via the PDP first.
+# The PDP-guarded connector is the sole chokepoint: its call_tool runs PolicyDecisionPoint
+# .decide() (and the trajectory monitor) before touching the transport. Nothing else may.
+_ALLOWLIST: frozenset[str] = frozenset({"adapters/mcp/connector.py"})
 
 # Matches an INVOCATION `x.call_tool(`, not the Protocol definition `async def call_tool(`.
 _INVOKE = re.compile(r"\.call_tool\s*\(")

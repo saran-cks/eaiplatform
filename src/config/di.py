@@ -84,10 +84,30 @@ class Container:
         registry = PeerRegistry()
         return LangGraphRunner(self._settings, self.llm, peer_registry=registry)
 
-    # --- MCP (Session 7) ---
+    # --- MCP (Session 7) — PDP-guarded; first real caller of DD-8 + DD-11 ---
     @cached_property
     def mcp(self) -> MCPConnectorPort:
-        raise AdapterNotWired("MCPConnectorPort — adapters/mcp/connector.py (Session 7, step 10)")
+        from adapters.mcp.catalog import ToolCatalog, build_catalog
+        from adapters.mcp.connector import PdpGuardedMCPConnector
+        from adapters.mcp.target_resolver import McpTargetResolver
+        from adapters.mcp.transport import MockMCPTransport
+        from core.use_cases.policy.policy_decision_point import PolicyDecisionPoint
+        from core.use_cases.policy.trajectory_monitor import TrajectoryMonitor
+
+        # When MCP is disabled, an empty catalog ⇒ the PDP default-denies every tool and
+        # list_tools is empty — the safe, default-deny posture rather than a hard error.
+        catalog = build_catalog() if self._settings.mcp_enabled else ToolCatalog([])
+        env = {"local": "dev", "staging": "staging", "prod": "prod"}[self._settings.app_env]
+        resolver = McpTargetResolver(catalog=catalog, environment=env)
+        pdp = PolicyDecisionPoint(
+            registry=catalog.policy_registry(), target_resolver=resolver
+        )
+        monitor = TrajectoryMonitor()
+        # Real ClientSession-backed transport drops in here when mcp_mock_mode is False.
+        transport = MockMCPTransport()
+        return PdpGuardedMCPConnector(
+            catalog=catalog, pdp=pdp, monitor=monitor, transport=transport
+        )
 
     # --- observability (Session 8) ---
     @cached_property

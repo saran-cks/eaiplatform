@@ -29,9 +29,20 @@ class MCPConnectorPort(Protocol):
         name: str,
         arguments: Mapping[str, Any],
         scope: PermissionScope,
+        session_id: str | None = None,
     ) -> Mapping[str, Any]:
-        """Invoke a tool after scope validation; returns the tool result payload."""
+        """Invoke a tool after the action-policy chokepoint clears it; return its result.
+
+        ``session_id`` keys the cumulative-session-risk monitor (DD-11); when omitted the
+        connector falls back to the scope's subject/tenant. A denied action raises
+        ``PolicyViolation`` and a KILL-level trajectory raises ``TrajectoryKill`` — the
+        external transport is reached only on an ALLOW.
+        """
         ...
 
     async def disconnect(self, *, server: str, tenant_id: str) -> None:
+        ...
+
+    async def close(self) -> None:
+        """Release transport resources at application shutdown."""
         ...

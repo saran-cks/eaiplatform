@@ -14,6 +14,22 @@ from enum import StrEnum
 from core.domain.value_objects.permission_scope import PermissionScope
 
 
+class PolicyViolation(PermissionError):
+    """Raised when the PDP did not ALLOW an action (DENY or REQUIRE_APPROVAL).
+
+    The chokepoint raises this instead of executing the tool, so a denied action can
+    never reach the external transport. Carries the PDP's reason for audit.
+    """
+
+
+class TrajectoryKill(RuntimeError):
+    """Raised when the trajectory monitor's cumulative session risk hits KILL (DD-11).
+
+    Even when every individual action is PDP-allowed, the slow-accumulation monitor can
+    veto further tool calls; the runtime / ``agent_reaper`` terminates the session.
+    """
+
+
 class Effect(StrEnum):
     """The kind of effect a tool has on an external system."""
 

@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     guard_enabled: bool = Field(True, alias="GUARD_ENABLED")
     guard_gateway_url: str = Field("http://guard_gateway:8001", alias="GUARD_GATEWAY_URL")
 
+    # --- MCP external connectors (read-only phase 1; writes FUTURE) ---
+    mcp_enabled: bool = Field(True, alias="MCP_ENABLED")
+    # Mock transport (canned results, no live MCP servers) until real connectors land.
+    mcp_mock_mode: bool = Field(True, alias="MCP_MOCK_MODE")
+
     # --- AWS Bedrock ---
     aws_region: str = Field("us-east-1", alias="AWS_REGION")
     aws_access_key_id: str = Field("", alias="AWS_ACCESS_KEY_ID")

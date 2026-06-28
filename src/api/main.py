@@ -110,6 +110,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.warning("Error closing guard adapter: %s", exc)
 
+    if "mcp" in container.__dict__:
+        try:
+            await container.mcp.close()
+        except Exception as exc:
+            logger.warning("Error closing mcp connector: %s", exc)
+
     logger.info("%s stopped", settings.app_name)
 
 

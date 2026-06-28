@@ -99,3 +99,26 @@ system. Run this once the real adapters land (Phase 3/4).
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+---
+
+## ST-3: MCP connector — live tool execution through the PDP chokepoint — added 2026-06-28 — **PENDING**
+
+Wired in Session 13 (`docs/core-api-dev-log.md`, DD-14). Unit tests use a spy transport
+and the real PDP + trajectory monitor; what's unverified is the **real MCP transport**
+(`ClientSession`) against an actual MCP server. Run when `MCP_MOCK_MODE=false` and a real
+connector lands (replacing `MockMCPTransport` behind `MCPTransportPort`).
+
+### What to verify
+1. **ALLOW reaches the real tool.** An in-scope read (e.g. `servicenow.get_incident`) returns
+   the real payload; the canonical target's environment/id match the resolved resource.
+2. **Default-deny holds live.** An unknown tool, an under-scoped call, and a call missing the
+   id argument all raise `PolicyViolation` and **never** hit the MCP server (confirm in the
+   server's access logs — zero requests for the denied calls).
+3. **Trajectory enforcement live.** Drive a long read-then-mutate-shaped session (once write
+   tools exist) and confirm cumulative risk escalates to a `TrajectoryKill` that stops further
+   calls — even though each individual call is PDP-allowed.
+4. **list_tools is scope-filtered** against the real server's advertised tools.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:

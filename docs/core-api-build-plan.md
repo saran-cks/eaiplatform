@@ -74,10 +74,11 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `core/use_cases/agent/{run_agent,manage_artifacts}.py`
 - [x] `api/routes/agent.py` (SSE) + schema
 
-### Session 7 — Step 10: MCP layer
-- [ ] `adapters/mcp/{registry,connector}.py`, `tools/base.py`
-- [ ] `tools/{servicenow,confluence,github,zendesk}.py` (read-only; write = FUTURE)
-- [ ] `api/routes/mcp.py` + schema
+### Session 7 — Step 10: MCP layer  ✅ DONE (routes deferred)
+- [x] `adapters/mcp/{catalog(registry),connector}.py`, `tools/base.py`, `transport.py`, `target_resolver.py`
+- [x] `tools/{servicenow,confluence,github,zendesk}.py` (read-only; write = FUTURE)
+- [x] **PDP + trajectory-monitor wiring** — connector is the chokepoint; `test_pdp_chokepoint.py` allowlist now `{adapters/mcp/connector.py}` (DD-8/DD-11 have their first caller)
+- [ ] `api/routes/mcp.py` + schema — **deferred**: the agent runtime (not an HTTP route) is the intended caller; adding a route now would force allowlisting it. Build with agent tools.
 
 ### Session 8 — Step 11: observability
 - [ ] `observability/{otel,spans,metrics,drift}.py` full
