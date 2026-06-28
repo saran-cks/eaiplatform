@@ -78,7 +78,8 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `adapters/mcp/{catalog(registry),connector}.py`, `tools/base.py`, `transport.py`, `target_resolver.py`
 - [x] `tools/{servicenow,confluence,github,zendesk}.py` (read-only; write = FUTURE)
 - [x] **PDP + trajectory-monitor wiring** — connector is the chokepoint; `test_pdp_chokepoint.py` allowlist now `{adapters/mcp/connector.py}` (DD-8/DD-11 have their first caller)
-- [ ] `api/routes/mcp.py` + schema — **deferred**: the agent runtime (not an HTTP route) is the intended caller; adding a route now would force allowlisting it. Build with agent tools.
+- [x] **Agent runtime is the chokepoint's runtime caller (Session 14, DD-15)** — `LangGraphRunner` workers fetch via `MCPConnectorPort.call_tool` (DD-8/DD-11 now run on real traffic); `agent_reaper` force-terminates `TrajectoryKill`ed sessions via `AgentKillRegistry`; chokepoint allowlist now two-tier `{connector, langgraph_runner}`.
+- [ ] `api/routes/mcp.py` + schema — **deferred**: the agent runtime (not an HTTP route) is the caller; adding a route would force allowlisting it. Build if/when a direct tool-exec endpoint is needed.
 
 ### Session 8 — Step 11: observability
 - [ ] `observability/{otel,spans,metrics,drift}.py` full

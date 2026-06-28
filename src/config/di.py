@@ -19,6 +19,7 @@ from __future__ import annotations
 from functools import cached_property
 
 from config.settings import Settings, get_settings
+from core.domain.agent_control import AgentKillRegistry
 from core.ports.agent import AgentPort
 from core.ports.cache import CachePort
 from core.ports.guard import GuardPort
@@ -78,11 +79,25 @@ class Container:
 
     # --- agent (Session 6) ---
     @cached_property
+    def agent_kill_registry(self) -> AgentKillRegistry:
+        """Shared DD-11 kill ledger: written by the runner, drained by the agent_reaper."""
+        return AgentKillRegistry()
+
+    @cached_property
     def agent(self) -> AgentPort:
         from adapters.agent.a2a.registry import PeerRegistry
         from adapters.agent.langgraph_runner import LangGraphRunner
         registry = PeerRegistry()
-        return LangGraphRunner(self._settings, self.llm, peer_registry=registry)
+        # The agent runtime is the first runtime caller of the PDP chokepoint: its workers
+        # fetch external data through self.mcp (DD-8/DD-11). A KILL is recorded in the shared
+        # registry the reaper drains.
+        return LangGraphRunner(
+            self._settings,
+            self.llm,
+            peer_registry=registry,
+            mcp=self.mcp,
+            kill_registry=self.agent_kill_registry,
+        )
 
     # --- MCP (Session 7) — PDP-guarded; first real caller of DD-8 + DD-11 ---
     @cached_property

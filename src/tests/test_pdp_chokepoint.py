@@ -14,10 +14,16 @@ from pathlib import Path
 
 SRC_ROOT = Path(__file__).resolve().parent.parent
 
-# Modules permitted to invoke a tool transport directly. Each MUST route via the PDP first.
-# The PDP-guarded connector is the sole chokepoint: its call_tool runs PolicyDecisionPoint
-# .decide() (and the trajectory monitor) before touching the transport. Nothing else may.
-_ALLOWLIST: frozenset[str] = frozenset({"adapters/mcp/connector.py"})
+# Modules permitted to invoke `call_tool` — every entry is verified PDP-routed:
+#   * adapters/mcp/connector.py  — THE chokepoint; calls the raw transport, but only after
+#     PolicyDecisionPoint.decide() + the trajectory monitor have run. The sole transport caller.
+#   * adapters/agent/langgraph_runner.py — the runtime caller. It calls the *connector port*
+#     (self._mcp.call_tool), which IS the PDP entry; it never holds the raw transport (DI gives
+#     it only MCPConnectorPort), so it cannot bypass. See DD-15.
+# Any other `.call_tool(` site fails this guard until reviewed and added here.
+_ALLOWLIST: frozenset[str] = frozenset(
+    {"adapters/mcp/connector.py", "adapters/agent/langgraph_runner.py"}
+)
 
 # Matches an INVOCATION `x.call_tool(`, not the Protocol definition `async def call_tool(`.
 _INVOKE = re.compile(r"\.call_tool\s*\(")

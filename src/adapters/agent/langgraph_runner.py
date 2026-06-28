@@ -19,13 +19,27 @@ from langgraph.graph import StateGraph
 from langgraph.types import Send
 
 from config.settings import Settings
+from core.domain.agent_control import AgentKillRegistry
 from core.domain.entities.message import Message, Role
 from core.domain.entities.session import AgentSession
+from core.domain.policy.types import PolicyViolation, TrajectoryKill
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.agent import AgentPort
 from core.ports.llm import LLMPort
+from core.ports.mcp_connector import MCPConnectorPort
 
 logger = logging.getLogger(__name__)
+
+
+def _find_kill(exc: BaseException | None) -> TrajectoryKill | None:
+    """Walk the cause/context chain for a TrajectoryKill (LangGraph may wrap it)."""
+    seen = 0
+    while exc is not None and seen < 10:
+        if isinstance(exc, TrajectoryKill):
+            return exc
+        exc = exc.__cause__ or exc.__context__
+        seen += 1
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -53,10 +67,21 @@ class AgentState(TypedDict):
 class LangGraphRunner(AgentPort):
     """LangGraph-backed Agent execution engine implementing AgentPort."""
 
-    def __init__(self, settings: Settings, llm: LLMPort, peer_registry: Any = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        llm: LLMPort,
+        peer_registry: Any = None,
+        mcp: MCPConnectorPort | None = None,
+        kill_registry: AgentKillRegistry | None = None,
+    ) -> None:
         self._settings = settings
         self._llm = llm
         self._peer_registry = peer_registry
+        # The PDP-guarded MCP connector (DD-8/DD-11). Workers fetch external data through it;
+        # when absent (unit tests) workers fall back to simulated content.
+        self._mcp = mcp
+        self._kill_registry = kill_registry
 
         # Interrupted sessions registry (cooperative cancellation)
         self._interrupted: set[str] = set()
@@ -127,6 +152,37 @@ class LangGraphRunner(AgentPort):
         if sid and sid in self._interrupted:
             raise asyncio.CancelledError(f"Agent session {sid} was interrupted.")
 
+    async def _fetch_via_mcp(
+        self,
+        *,
+        config: RunnableConfig,
+        sid: str,
+        label: str,
+        tool: str,
+        arguments: dict[str, Any],
+    ) -> tuple[str, bool]:
+        """Fetch external data through the PDP-guarded connector (DD-8/DD-11).
+
+        Returns ``(content, success)``. A PDP denial degrades this one worker (success=False)
+        without aborting the run; a ``TrajectoryKill`` is re-raised so it tears down the whole
+        session — cumulative session risk is fatal to the agent, not to a single source.
+        Falls back to simulated content when no connector/scope is wired (unit tests).
+        """
+        scope = config.get("configurable", {}).get("scope")
+        if self._mcp is None or scope is None:
+            return f"{label}: (simulated — MCP connector not wired)", True
+        try:
+            result = await self._mcp.call_tool(
+                name=tool, arguments=arguments, scope=scope, session_id=sid
+            )
+            return f"{label}: {result.get('result', result)}", True
+        except TrajectoryKill:
+            raise  # never swallow — must propagate to reap the session (DD-11)
+        except PolicyViolation as exc:
+            return f"{label}: access denied by policy ({exc})", False
+        except Exception as exc:  # transport/network failure — isolate to this worker
+            return f"{label}: source unavailable ({exc})", False
+
     async def _planner_node(self, state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         self._check_interruption(state)
         queue = config.get("configurable", {}).get("queue")
@@ -192,9 +248,10 @@ class LangGraphRunner(AgentPort):
         if queue:
             await queue.put({"event": "worker_start", "data": {"source": "logs"}})
 
-        # superstep failure isolation try/except block
+        # superstep failure isolation try/except block.
+        # NOTE: logs have no phase-1 MCP tool (a Loki/CloudWatch connector is FUTURE), so this
+        # worker stays simulated while code/ticket workers route through the PDP chokepoint.
         try:
-            # Simulate fetching logs via MCP
             await asyncio.sleep(0.5)
             content = (
                 "LOGS: Found traceback on line 42 of auth middleware: Signature verification failed"
@@ -218,13 +275,14 @@ class LangGraphRunner(AgentPort):
         if queue:
             await queue.put({"event": "worker_start", "data": {"source": "code"}})
 
-        try:
-            await asyncio.sleep(0.4)
-            content = "CODE: src/api/middleware/auth.py contains verification key matching settings"
-            success = True
-        except Exception as e:
-            content = f"Code worker failed: {e}"
-            success = False
+        # Real external read through the chokepoint: requires `github:read` in scope.
+        content, success = await self._fetch_via_mcp(
+            config=config,
+            sid=state["agent_session_id"],
+            label="CODE",
+            tool="github.get_file",
+            arguments={"repo": "core-api", "path": "src/api/middleware/auth.py", "ref": "main"},
+        )
 
         if queue:
             await queue.put(
@@ -242,13 +300,14 @@ class LangGraphRunner(AgentPort):
         if queue:
             await queue.put({"event": "worker_start", "data": {"source": "tickets"}})
 
-        try:
-            await asyncio.sleep(0.3)
-            content = "TICKETS: Ticket #1024 states: 'Intermittent 401 on health check endpoints'"
-            success = True
-        except Exception as e:
-            content = f"Ticket worker failed: {e}"
-            success = False
+        # Real external read through the chokepoint: requires `servicenow:read` in scope.
+        content, success = await self._fetch_via_mcp(
+            config=config,
+            sid=state["agent_session_id"],
+            label="TICKETS",
+            tool="servicenow.get_incident",
+            arguments={"number": "INC0001024"},
+        )
 
         if queue:
             await queue.put(
@@ -330,12 +389,13 @@ class LangGraphRunner(AgentPort):
         scope: PermissionScope,
     ) -> AsyncIterator[Mapping[str, Any]]:
         """Run the state graph and yield events for SSE."""
-        return self._run_generator(agent_session, prompt)
+        return self._run_generator(agent_session, prompt, scope)
 
     async def _run_generator(
         self,
         agent_session: AgentSession,
         prompt: str,
+        scope: PermissionScope,
     ) -> AsyncIterator[Mapping[str, Any]]:
         sid = agent_session.agent_session_id
 
@@ -356,6 +416,7 @@ class LangGraphRunner(AgentPort):
         config = {
             "configurable": {
                 "queue": queue,
+                "scope": scope,  # workers fetch through the PDP chokepoint with this scope
                 "max_concurrency": self._settings.agent_max_concurrency,
             }
         }
@@ -373,9 +434,23 @@ class LangGraphRunner(AgentPort):
                 except TimeoutError:
                     continue
 
-            # If task finished with exception, propagate it
+            # If task finished with exception, propagate it. A trajectory KILL (DD-11) is
+            # special: record it for the reaper and emit a terminal `killed` event so the
+            # client learns *why* before the exception tears the stream down.
             if task.done() and task.exception() is not None:
-                raise task.exception()  # type: ignore[misc]
+                exc = task.exception()
+                kill = _find_kill(exc)
+                if kill is not None:
+                    reason = str(kill)
+                    if self._kill_registry is not None:
+                        self._kill_registry.record(sid, reason)
+                    logger.warning("LangGraphRunner: session %s KILLED (DD-11): %s", sid, reason)
+                    yield {
+                        "event": "killed",
+                        "data": {"reason": reason, "source": "trajectory-monitor"},
+                    }
+                    raise kill
+                raise exc  # type: ignore[misc]
 
         except asyncio.CancelledError:
             logger.info("LangGraphRunner.run: Task cancelled cooperatively for session %s", sid)

@@ -36,6 +36,7 @@ class AgentStatus(StrEnum):
     COMPLETED = "completed"
     INTERRUPTED = "interrupted"
     FAILED = "failed"
+    KILLED = "killed"  # DD-11: trajectory monitor crossed KILL — reaped, not a soft failure
     ZOMBIE = "zombie"
 
 

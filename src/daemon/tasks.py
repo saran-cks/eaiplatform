@@ -5,7 +5,7 @@ The ``start_daemons`` / ``stop_daemons`` functions are called from the app
 lifespan in ``api/main.py``.
 
 All daemons are skeleton implementations for Session 2. Real logic is added as
-the corresponding adapters come online (Sessions 3–9).
+the corresponding adapters come online (Sessions 3-9).
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.settings import Settings
+    from core.domain.agent_control import AgentKillRegistry
+    from core.ports.agent import AgentPort
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +25,33 @@ logger = logging.getLogger(__name__)
 _tasks: list[asyncio.Task[None]] = []
 
 
-async def _agent_reaper(interval: int) -> None:
-    """Kill TTL-exceeded or orphaned agent sessions (Session 6)."""
+async def _agent_reaper(
+    interval: int,
+    agent: AgentPort | None = None,
+    kill_registry: AgentKillRegistry | None = None,
+) -> None:
+    """Reap agent sessions the trajectory monitor killed (DD-11 backstop).
+
+    The MCP chokepoint raises ``TrajectoryKill`` and the runner records the session in the
+    kill registry; this sweep drains it and force-terminates the task, guaranteeing the run
+    is dead even if exception propagation was cut short (client disconnect, etc.).
+    """
     while True:
         await asyncio.sleep(interval)
-        logger.debug("agent_reaper: sweep (no-op until Session 6)")
+        if kill_registry is None or agent is None:
+            logger.debug("agent_reaper: sweep (kill registry not wired)")
+            continue
+        for record in kill_registry.drain():
+            logger.warning(
+                "agent_reaper: reaping KILLED session %s (%s)",
+                record.agent_session_id, record.reason,
+            )
+            try:
+                await agent.terminate(agent_session_id=record.agent_session_id)
+            except Exception as exc:
+                logger.error(
+                    "agent_reaper: failed to terminate %s: %s", record.agent_session_id, exc
+                )
 
 
 async def _session_cleanup(interval: int) -> None:
@@ -51,13 +75,21 @@ async def _process_manager(interval: int) -> None:
         logger.debug("process_manager: tick (no-op until queue adapter wired)")
 
 
-def start_daemons(settings: Settings) -> None:
+def start_daemons(
+    settings: Settings,
+    *,
+    agent: AgentPort | None = None,
+    kill_registry: AgentKillRegistry | None = None,
+) -> None:
     """Create and schedule all daemon tasks. Called once during app startup."""
     loop = asyncio.get_running_loop()
 
     _tasks.extend(
         [
-            loop.create_task(_agent_reaper(settings.reaper_interval), name="agent_reaper"),
+            loop.create_task(
+                _agent_reaper(settings.reaper_interval, agent=agent, kill_registry=kill_registry),
+                name="agent_reaper",
+            ),
             loop.create_task(_session_cleanup(settings.cleanup_interval), name="session_cleanup"),
             loop.create_task(_health_watchdog(settings.watchdog_interval), name="health_watchdog"),
             loop.create_task(_process_manager(60), name="process_manager"),

@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.domain.entities.session import AgentSession, AgentStatus
+from core.domain.policy.types import TrajectoryKill
 from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
 from core.ports.agent import AgentPort
@@ -122,6 +123,13 @@ class RunAgentUseCase:
             logger.warning("RunAgentUseCase: Execution task cancelled for session %s", sid)
             final_status = AgentStatus.INTERRUPTED
             raise
+        except TrajectoryKill as exc:
+            # DD-11: cumulative session risk crossed KILL. The runner already emitted the
+            # `killed` event; record KILLED status and end the stream cleanly (the reaper
+            # daemon force-terminates the task as a backstop). Do NOT re-raise — this is a
+            # deliberate, terminal verdict, not an orchestrator failure.
+            logger.warning("RunAgentUseCase: session %s KILLED by trajectory monitor: %s", sid, exc)
+            final_status = AgentStatus.KILLED
         except Exception as exc:
             logger.error("RunAgentUseCase: Graph execution failed for session %s: %s", sid, exc)
             final_status = AgentStatus.FAILED

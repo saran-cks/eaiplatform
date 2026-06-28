@@ -78,7 +78,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         environment=settings.app_env,
         otlp_endpoint=settings.otel_exporter_otlp_endpoint,
     )
-    start_daemons(settings)
+    # The agent_reaper needs the agent port + the shared DD-11 kill registry to force-terminate
+    # sessions the trajectory monitor killed. Building the agent here also fails fast on a
+    # mis-wired MCP chokepoint rather than on first request.
+    container = app.state.container
+    start_daemons(
+        settings,
+        agent=container.agent,
+        kill_registry=container.agent_kill_registry,
+    )
 
     logger.info("%s ready on %s:%d", settings.app_name, settings.api_host, settings.api_port)
 
