@@ -12,6 +12,7 @@ logs live under [`docs/`](docs/).
 | Embedding sidecar | `sidecars/model_server/` | bge-m3 dense+sparse embeddings (gRPC). |
 | Prompt Guard sidecar | `sidecars/prompt_guard/` | Llama Prompt Guard 2 injection/jailbreak screening (HTTP). |
 | Ingestion worker | `ingestion_worker/` | Standalone container: acquire → gate → parse → guard → chunk → embed → dual-write. Decoupled; coupled only via the shared schema. |
+| Frontend SPA | `frontend/` | UI: static React+Vite+TS SPA. Pure client of the Core API (HTTP/SSE); shares no code. **Planning stage** (DD-19). |
 
 The Core API and the ingestion worker share **no code** — only data at rest in Qdrant +
 Postgres (+ Phoenix). That schema is pinned in [`contracts/`](contracts/) and
@@ -21,6 +22,7 @@ cross-enforced by tests on both sides.
 
 - **Architecture:** [`docs/core-api-architecture.md`](docs/core-api-architecture.md)
 - **Build plan:** [`docs/core-api-build-plan.md`](docs/core-api-build-plan.md)
+- **Frontend build plan:** [`docs/frontend-build-plan.md`](docs/frontend-build-plan.md)
 - **Design decisions (incl. the DD-7…DD-13 security model):** [`docs/design-decisions.md`](docs/design-decisions.md)
 - **Cross-service contracts:** [`contracts/README.md`](contracts/README.md)
 - **Dev logs:** core-api, ingestion-worker, embedding/prompt-guard sidecars, and
