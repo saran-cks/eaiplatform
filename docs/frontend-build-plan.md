@@ -13,10 +13,11 @@ chat (RAG), the autonomous agent surface (live ReAct trace + Monaco artifacts), 
 and an observability/ops surface. No SSR, no BFF — builds to static assets, deploys behind a CDN or
 the API's static mount. See **DD-19** for why SPA-not-SSR and the full rationale.
 
-> **Status:** Session F1 COMPLETE (2026-06-29) — the SPA scaffold, auth shell, and API/SSE layer
-> build green (`tsc -b && vite build`, 0 lint errors). Visual design is **locked** (below). Next up:
-> Session F2 (conversation shell + chat mode). See `docs/frontend-dev-log.md` for the F1 record and
-> the three intentional deviations (code-based router, hand-authored shadcn primitives, npm-not-pnpm).
+> **Status:** Session F2 COMPLETE (2026-06-29) — the conversation surface + chat mode build green
+> (`tsc -b && vite build`, 0 lint errors): history rail, composer with the chat/agent toggle (agent
+> gated to F3), bare-token SSE streaming with markdown render, and a parallel `/search` sources panel.
+> Visual design is **locked** (below). Next up: Session F3 (agent mode + ephemeral ActionStream +
+> Monaco). See `docs/frontend-dev-log.md` for the F1/F2 records and the intentional deviations.
 
 ## Locked decisions (DD-19)
 - **Static SPA, not SSR/Next.js** — every surface is behind auth over a pure JSON/SSE API; SSR buys
@@ -117,18 +118,26 @@ frontend/
 - [x] Generate `api/generated/types.ts` from the backend `/openapi.json` (dumped offline; `npm run gen:api`).
 - [x] Vite dev proxy to the Core API (per-prefix, SSE-safe); `.env.example` (API base, dev secret, Cognito).
 
-### Session F2 — Conversation shell + chat mode  ← NEXT (no infra needed)
-- [ ] `ThemeProvider` — `typer`/`dark` CSS-variable themes + toggle; fonts loaded (Courier Prime / Special
-      Elite; JetBrains Mono or IBM Plex Mono). Blinking block caret.
-- [ ] `HistorySidebar` (left rail): list (`GET /chat`), create (`POST /chat`), select; history hydrate
-      (`GET /chat/{id}/history`).
-- [ ] `Composer` — query box with the **chat/agent mode toggle** beside it.
-- [ ] **Chat mode**: `POST /chat/{id}/message`, render the **bare-token SSE** incrementally; handle
-      `event: error` and `[DONE]`; cancel on unmount. (No action ticker in chat — see FUTURE note.)
-- [ ] Sources panel via a parallel `GET /search` (until structured citations exist — flagged in DD-19).
-- [ ] Empty/loading/error states; markdown rendering of assistant output.
+### Session F2 — Conversation shell + chat mode  ✅ DONE (2026-06-29)
+- [x] `ThemeProvider` — `typer`/`dark` CSS-variable themes + toggle (landed in F1; in use here).
+- [x] `HistorySidebar` (left rail): list (`GET /chat`), select + history hydrate
+      (`GET /chat/{id}/history`); new-conversation resets to a fresh client-side session id.
+      *(Sessions are created implicitly by the first message — the server `get_or_create`s the path
+      `session_id` and takes the title — so no separate `POST /chat` round-trip on the happy path.)*
+- [x] `Composer` — textarea + the **chat/agent mode toggle** (Enter sends, Shift+Enter newline).
+      Agent mode is selectable but **gated** (send disabled, "lands in F3") until the F3 stream is wired.
+- [x] **Chat mode**: `POST /chat/{id}/message` via `streamChat`, bare-token SSE rendered incrementally
+      with a live caret; `event: error` → per-message error, `[DONE]` terminates; **stop** button +
+      cancel-on-unmount abort the stream. (No action ticker in chat — see FUTURE note.)
+- [x] Sources panel via a parallel `GET /search` (runs concurrently with the stream, never blocks it;
+      stands in for structured citations — flagged in DD-19).
+- [x] Empty/loading/error states; markdown render of assistant output (`react-markdown` + `remark-gfm`,
+      themed off the token layer — no `@tailwindcss/typography`).
+- [ ] **Feedback (👍/👎) deferred** — `POST /feedback` needs the turn's `span_id`, which the chat SSE
+      doesn't emit today. Blocked on a small backend addition (surface the span id on the stream); tracked
+      as FUTURE so it lands next to each reply when available (DD-19 addendum).
 
-### Session F3 — Agent mode + ephemeral action ticker + Monaco
+### Session F3 — Agent mode + ephemeral action ticker + Monaco  ← NEXT
 - [ ] **Agent mode** via the toggle: `POST /agent/{id}/run` consuming the **named-event SSE**.
 - [ ] `ActionStream` — live ephemeral ticker fed by `worker_start`/`worker_done`/`thought`/`synthesis`
       (e.g. `pulled git repo`, `searched ServiceNow ticket…`); on completion **fade opacity + collapse

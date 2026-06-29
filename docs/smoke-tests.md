@@ -244,3 +244,36 @@ Core API instance is up (it needs no other infra for the auth + a basic stream c
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+## ST-F2: Frontend chat mode — full conversation UI against a running Core API — added 2026-06-29 — **PENDING**
+
+Session F2 wired the real conversation surface (`docs/frontend-dev-log.md`): history rail, composer with
+the chat/agent toggle, bare-token streaming with markdown render, and the parallel `/search` sources panel.
+Built green but never run against a live backend. Run once a Core API (with retrieval + an LLM) is up.
+
+### Prereqs
+- Same as ST-F1 (Core API on :8000, `frontend/.env` with matching dev JWT secret/issuer/audience,
+  `cd frontend && npm install && npm run dev`).
+- The retrieval path needs the embedding sidecar + a populated Qdrant for sources to return chunks; chat
+  streaming itself needs the configured LLM (Bedrock) reachable.
+
+### What to verify
+1. **New conversation → stream.** From an empty surface, send a message: the user bubble appears, the
+   assistant bubble streams tokens with the live caret, and it terminates cleanly (no console errors).
+   The session then shows up in the left rail with a title derived from the first message.
+2. **Implicit session creation.** Confirm only `POST /chat/{id}/message` is sent on first turn (no separate
+   `POST /chat`), and the server `get_or_create`s the session (the new id is listed by `GET /chat`).
+3. **History hydrate.** Select an existing session → `GET /chat/{id}/history` populates the transcript with
+   roles mapped correctly; switching sessions aborts any in-flight stream.
+4. **Sources panel.** The right rail issues a parallel `GET /search` for the query and renders chunks
+   (fusion + reranked badges, score, snippet); a search failure shows the error without breaking the chat
+   stream.
+5. **Stop + abort.** The stop button aborts mid-stream and freezes the partial answer; navigating away
+   mid-stream cancels cleanly.
+6. **Error frame.** Force an `event: error` (e.g. LLM/retrieval failure) → the assistant bubble shows the
+   per-message stream-error state, not a silent hang.
+7. **Markdown + theme.** Assistant markdown renders (note: streamed text is largely single-line due to the
+   SSE newline-collapse; persisted history is fuller) and looks correct in both `dark` and `typer`.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:

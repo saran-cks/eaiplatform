@@ -70,3 +70,60 @@ path relative to the repo root. Fix: always `cd` back to the repo root within th
 ThemeProvider is already in; F2 is the conversation surface: `HistorySidebar` (GET/POST `/chat`,
 `GET /chat/{id}/history`), `Composer` with the chat/agent mode toggle, chat-mode bare-token streaming
 via `streamChat`, a parallel `GET /search` sources panel, and markdown rendering.
+
+## Session F2 — Conversation shell + chat mode (2026-06-29)
+
+Brought the conversation surface to life: the placeholder `conversation` route is now a real three-column
+chat client streaming against the Core API. Builds green; chat mode is fully wired, agent mode is gated to
+F3 behind the same composer toggle.
+
+### What landed
+- **Feature module `src/features/conversation/`** — all chat UI + state isolated from the route, which now
+  just renders `<ConversationView/>`.
+- **`useConversation` hook** — single owner of chat-mode state: the session list (`listSessions` via
+  TanStack Query), the active session's `messages`, the live stream, and the parallel sources lookup.
+  Exposes `send`/`stop`/`selectSession`/`newConversation`. Streaming appends tokens to the in-flight
+  assistant message by id; an `AbortController` is held in a ref and torn down on `stop` and on unmount.
+- **Implicit session creation** — on the first message of a new conversation the client generates the
+  `session_id` (`crypto.randomUUID()`) and posts straight to `POST /chat/{id}/message`; the backend
+  `get_or_create`s the session and takes the title from the request body, so there's **no separate
+  `POST /chat`** round-trip. After the stream finishes, the sessions query is invalidated so the new
+  conversation appears in the rail (with its derived title).
+- **`HistorySidebar`** — new-conversation button + the tenant/subject's sessions (`GET /chat`), active
+  highlight, history hydrate on select (`GET /chat/{id}/history`, role-mapped to user/assistant).
+- **`Composer`** — auto-growing textarea, Enter-to-send / Shift+Enter-newline, and the **chat/agent mode
+  toggle**. Agent mode is selectable but disabled (clear "lands in F3" hint) until the named-event stream
+  is wired; the send button flips to a **stop** control while streaming.
+- **`MessageList`** — user/assistant bubbles, assistant output through the markdown renderer, a blinking
+  block caret on the streaming message, per-message error state, and bottom-stick auto-scroll.
+- **`SourcesPanel`** — right rail showing the chunks `GET /search` returned for the last query (fusion +
+  reranked badges, score, doc title/id, snippet). Runs concurrently with the token stream and never blocks
+  it; stands in for structured citations until the chat stream emits them (DD-19).
+- **`Markdown`** — `react-markdown` + `remark-gfm`, every element themed off the CSS-variable token layer
+  (no `@tailwindcss/typography`), so it reads correctly in both `dark` and `typer`.
+
+### Verification
+- `npm run build` (`tsc -b && vite build`) green — 530 modules, 0 type errors.
+- `npm run lint` — 0 errors, the same 4 pre-existing `react-refresh/only-export-components` warnings from
+  F1 (none from the new files).
+- Not yet run against a live Core API — that's smoke test **ST-F2** (`docs/smoke-tests.md`).
+
+### Known limitations / deferred
+- **Markdown block structure is degraded while streaming.** The chat SSE replaces newlines inside each
+  token with spaces (backend SSE framing in `api/routes/chat.py`), so streamed answers arrive largely
+  single-line — inline formatting (bold, inline code, links) still renders; paragraph/list structure is
+  only full for persisted history. Not worth a backend change now; noted.
+- **Feedback (👍/👎) not built.** `POST /feedback` requires the turn's `span_id`; the chat stream doesn't
+  surface one. Deferred to a small backend addition (emit the span id on the stream), then it drops in next
+  to each reply per the DD-19 addendum.
+- **Titles** rely on the first message: `get_or_create` sets the title from the first send; existing
+  sessions with no title fall back to `session <id8>` in the rail.
+
+### Dependencies added
+`react-markdown ^9` + `remark-gfm ^4` (assistant output rendering). Lockfile updated.
+
+### Next (F3)
+Agent mode through the same composer toggle: `streamAgent` against `POST /agent/{id}/run`, the ephemeral
+`ActionStream` ticker fed by `worker_start`/`worker_done`/`thought`/`synthesis` (fade + collapse under a
+`>` drilldown on completion), `output` tokens into the answer, an interrupt button
+(`POST /agent/{id}/interrupt`), and the Monaco `ArtifactViewer` for `GET /agent/{id}/artifacts`.
