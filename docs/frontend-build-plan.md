@@ -13,11 +13,14 @@ chat (RAG), the autonomous agent surface (live ReAct trace + Monaco artifacts), 
 and an observability/ops surface. No SSR, no BFF — builds to static assets, deploys behind a CDN or
 the API's static mount. See **DD-19** for why SPA-not-SSR and the full rationale.
 
-> **Status:** Session F2 COMPLETE (2026-06-29) — the conversation surface + chat mode build green
-> (`tsc -b && vite build`, 0 lint errors): history rail, composer with the chat/agent toggle (agent
-> gated to F3), bare-token SSE streaming with markdown render, and a parallel `/search` sources panel.
-> Visual design is **locked** (below). Next up: Session F3 (agent mode + ephemeral ActionStream +
-> Monaco). See `docs/frontend-dev-log.md` for the F1/F2 records and the intentional deviations.
+> **Status:** Session F3 MOSTLY COMPLETE (2026-06-29) — agent mode is live and demoable (build green,
+> `tsc -b && vite build`, 0 lint errors). The composer's agent toggle is ungated; a **mock agent stream**
+> (`VITE_MOCK_AGENT`, on by default) drives the full surface without the live LangGraph backend: the
+> ephemeral **`ActionStream`** ticker (fades + collapses under a `›` drilldown on completion), `output`
+> tokens into the answer, and an interrupt button (real runs also fire `POST /agent/{id}/interrupt`).
+> **Remaining F3 item:** the Monaco `ArtifactViewer` (deferred — heavy dep). F2 landed the conversation
+> surface + chat mode. Visual design is **locked** (below). See `docs/frontend-dev-log.md` for the
+> F1/F2/F3 records and the intentional deviations.
 
 ## Locked decisions (DD-19)
 - **Static SPA, not SSR/Next.js** — every surface is behind auth over a pure JSON/SSE API; SSR buys
@@ -137,15 +140,22 @@ frontend/
       doesn't emit today. Blocked on a small backend addition (surface the span id on the stream); tracked
       as FUTURE so it lands next to each reply when available (DD-19 addendum).
 
-### Session F3 — Agent mode + ephemeral action ticker + Monaco  ← NEXT
-- [ ] **Agent mode** via the toggle: `POST /agent/{id}/run` consuming the **named-event SSE**.
-- [ ] `ActionStream` — live ephemeral ticker fed by `worker_start`/`worker_done`/`thought`/`synthesis`
-      (e.g. `pulled git repo`, `searched ServiceNow ticket…`); on completion **fade opacity + collapse
-      under a `>` drilldown** the user can re-expand. Themed per mode (typewriter keys / CLI log lines).
-- [ ] Stream `output` tokens into the answer; terminal `done`/`truncated` handling.
-- [ ] Interrupt button (`POST /agent/{id}/interrupt`) + disconnect-cancel.
+### Session F3 — Agent mode + ephemeral action ticker + Monaco  ✅ MOSTLY DONE (2026-06-29)
+- [x] **Agent mode** via the toggle (now ungated): `POST /agent/{id}/run` consuming the **named-event SSE**
+      (`streamAgent`). Mode flows into `send(text, mode)`; `useConversation` folds events into the answer.
+- [x] **Mock agent stream** (`api/mockAgent.ts`) — emits the real event shapes
+      (`thought`/`worker_start`/`worker_done`/`synthesis`/`output`/`done`) on timers, so the whole agent
+      surface is demoable **without the live LangGraph backend**. On by default; `VITE_MOCK_AGENT=0` flips to
+      the real `streamAgent`. (Dev-only seam, marked FUTURE-delete.)
+- [x] `ActionStream` — live ephemeral ticker fed by `worker_start`/`worker_done`/`thought`/`synthesis`
+      (active step shows the accent glyph + caret); on completion **fades to 70% opacity + collapses under a
+      `›` drilldown** the user can re-expand.
+- [x] Stream `output` tokens into the answer; terminal `done` handling; per-message `error` state.
+- [x] Interrupt: the **stop** button aborts the stream and (real runs only, not mock) fires
+      `POST /agent/{id}/interrupt` server-side; disconnect-cancel on unmount.
 - [ ] **Monaco editor** (`ArtifactViewer`) for artifacts (`GET /agent/{id}/artifacts`,
-      `/artifacts/{file_id}`) — language-aware, read-only.
+      `/artifacts/{file_id}`) — **deferred** (skipped the heavy `@monaco-editor/react` install in the quick
+      pass); the one remaining F3 bullet.
 - [ ] (Future) approval/PDP-prompt handling when the backend surfaces require-approval events.
 
 > **FUTURE EXTENSION — chat-mode action ticker.** Reusing `ActionStream` for chat (`searching / found /

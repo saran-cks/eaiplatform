@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { ActionStream } from "./ActionStream";
 import { Composer, type Mode } from "./Composer";
 import { HistorySidebar } from "./HistorySidebar";
 import { MessageList } from "./MessageList";
@@ -13,6 +14,7 @@ import { useConversation } from "./useConversation";
  */
 export function ConversationView() {
   const [mode, setMode] = useState<Mode>("chat");
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const {
     sessions,
     sessionsLoading,
@@ -21,6 +23,7 @@ export function ConversationView() {
     isStreaming,
     loadingHistory,
     sources,
+    actionSteps,
     send,
     stop,
     selectSession,
@@ -44,15 +47,20 @@ export function ConversationView() {
             loadingHistory={loadingHistory}
           />
         </div>
+        <ActionStream steps={actionSteps} active={isStreaming && mode === "agent"} />
         <Composer
           mode={mode}
           onModeChange={setMode}
-          onSubmit={(text) => void send(text)}
+          onSubmit={(text) => void send(text, mode)}
           onStop={stop}
           isStreaming={isStreaming}
         />
       </section>
-      <SourcesPanel sources={sources} />
+      <SourcesPanel
+        sources={sources}
+        open={sourcesOpen}
+        onToggle={() => setSourcesOpen((v) => !v)}
+      />
     </div>
   );
 }

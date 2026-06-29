@@ -4,6 +4,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Thin, translucent scrollbars everywhere — themed off --border so the chunky
+   default OS bar never shows. Firefox + WebKit. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border) / 0.5) transparent;
+}
+*::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border) / 0.5);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--border) / 0.8);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /*
  * Two monospace-led themes selected by a class on <html>: `.theme-dark`
  * (default) and `.theme-typer`. Every token is an HSL triplet so Tailwind's

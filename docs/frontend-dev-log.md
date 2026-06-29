@@ -127,3 +127,55 @@ Agent mode through the same composer toggle: `streamAgent` against `POST /agent/
 `ActionStream` ticker fed by `worker_start`/`worker_done`/`thought`/`synthesis` (fade + collapse under a
 `>` drilldown on completion), `output` tokens into the answer, an interrupt button
 (`POST /agent/{id}/interrupt`), and the Monaco `ArtifactViewer` for `GET /agent/{id}/artifacts`.
+
+## Session F3 — Agent mode + ephemeral ActionStream (2026-06-29)
+
+Ungated the composer's **agent** toggle and wired the named-event agent stream end-to-end. Because the
+LangGraph agent runtime isn't runnable on this laptop, the surface is driven by a **mock stream** by default
+so it's fully demoable now and flips to the real backend with one env flag. Builds green; the Monaco
+artifact viewer is the one F3 item left.
+
+### What landed
+- **Mode-aware send.** `send(text, mode)` branches: chat keeps the bare-token path; agent calls the
+  named-event stream. `useConversation` now also owns `actionSteps` and an `agentRunRef`.
+- **Mock agent stream** (`api/mockAgent.ts`) — emits the exact event shapes `streamAgent`/`sse.ts` parse
+  (`thought` → `worker_start` → `worker_done` → `synthesis` → `output…` → `done`) on abortable timers.
+  Selected by `MOCK_AGENT = (VITE_MOCK_AGENT ?? "1") !== "0"` — **on by default**; set `VITE_MOCK_AGENT=0`
+  to hit the live `POST /agent/{id}/run`. Dev-only seam, marked FUTURE-delete.
+- **Event folding.** `handleAgentEvent` maps events to UI: `thought`→a done step; `worker_start`→an active
+  step keyed `w:{worker_id}`; `worker_done`→that step flips to done + gets a `summary` detail;
+  `synthesis`→an active step; `output`→tokens appended to the in-flight answer; `error`→message error.
+- **`ActionStream`** (`features/conversation/ActionStream.tsx`) — live ticker while running (active row gets
+  the accent glyph + block caret); on completion it **fades to 70% and collapses under a `› N agent steps`
+  drilldown** the user can re-expand. Renders nothing when there are no steps (so chat mode is unaffected).
+- **Interrupt.** The streaming **stop** button aborts the stream; for a real (non-mock) run it also fires
+  `POST /agent/{id}/interrupt` (best-effort) to tear the session down server-side. Unmount still cancels.
+- **Composer** — agent mode is no longer disabled; the hint now reads "multi-step agent · streams its
+  actions above".
+
+### Also in this session (conversation polish)
+- **Empty state** reworked to a user-facing welcome ("Welcome! Curious Mind!" + a three-line couplet),
+  dropping the dev-facing "scoped retrieval" copy.
+- **Sources panel collapsed by default** — a slim always-present `› sources` tab on the far right (with a
+  result-count badge) opens the 72-wide panel; a `›` in the header closes it. `sourcesOpen` lives in
+  `ConversationView`.
+- **Composer floats + auto-grows** — it's now a centered rounded card lifted off the bottom edge; the
+  textarea grows to fit its content (`useLayoutEffect` measuring `scrollHeight`, capped at 240px).
+- **Translucent scrollbars globally** — a `*` rule in `theme/themes.css` styles every scrollbar off
+  `--border` at 50% opacity (→80% hover), transparent track, rounded thumb; Firefox + WebKit. Adapts to
+  both themes. Replaces the chunky default OS bar in the transcript, rails, and composer.
+
+### Verification
+- `npm run build` (`tsc -b && vite build`) green — 532 modules, 0 type errors.
+- `npm run lint` — 0 errors, same 4 pre-existing `react-refresh` warnings from F1 (none new).
+- Agent mode exercised via the mock (no backend); live agent run is smoke test **ST-F3** (`docs/smoke-tests.md`).
+
+### Known limitations / deferred
+- **Monaco `ArtifactViewer` not built** — skipped the heavy `@monaco-editor/react` install in this quick
+  pass; `GET /agent/{id}/artifacts` rendering is the one remaining F3 bullet.
+- **Mock event vocabulary is a subset** — covers the happy path; no `require-approval`/`truncated`/PDP-deny
+  events yet (those wire when the live agent surfaces them).
+
+### Next
+F4 (Search explorer + permission-gated "Open Phoenix ↗" launcher), or close out F3 by adding the Monaco
+artifact viewer. Feedback 👍/👎 still waits on the backend emitting a `span_id` on the stream.

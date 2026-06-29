@@ -277,3 +277,28 @@ Built green but never run against a live backend. Run once a Core API (with retr
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+## ST-F3: Frontend agent mode — live named-event stream against a running Core API — added 2026-06-29 — **PENDING**
+
+Session F3 ungated agent mode and wired the named-event agent stream (`docs/frontend-dev-log.md`). It runs
+today against a **mock** stream (`VITE_MOCK_AGENT` on by default) for demos; this ST verifies it against the
+**real** agent runtime. Set `VITE_MOCK_AGENT=0` (or unset and ensure it isn't "1") before running.
+
+### Prereqs
+- Same as ST-F1/ST-F2 plus a runnable agent path: the LangGraph runtime + MCP registry + PDP/trajectory
+  monitor (Valkey) + an LLM (Bedrock) reachable. `POST /agent/{id}/run` must stream named events.
+- `frontend/.env` with `VITE_MOCK_AGENT=0`.
+
+### What to verify
+1. **Agent run → action ticker.** Switch the composer to **agent** and send: the `ActionStream` shows
+   `thought`/`worker_start`/`worker_done`/`synthesis` rows live (active row carets), `output` tokens fill
+   the answer, and the run terminates on `done` with no console errors.
+2. **Collapse on completion.** When the run finishes the ticker fades and collapses to `› N agent steps`;
+   re-expanding shows the full step list with worker summaries.
+3. **Interrupt.** The stop button aborts mid-run and fires `POST /agent/{id}/interrupt`; confirm the server
+   tears the session down (agent reaper / no orphaned session) and the partial answer freezes.
+4. **Error frame.** An agent `error` event surfaces as the per-message stream-error state.
+5. **Chat unaffected.** Switching back to chat mode shows no action ticker and streams bare tokens as before.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:

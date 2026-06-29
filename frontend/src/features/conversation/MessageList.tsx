@@ -14,10 +14,9 @@ interface MessageListProps {
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-      <h2 className="font-accent text-base text-foreground">ask your knowledge base</h2>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        scoped retrieval-augmented chat. type below — answers stream token by token,
-        with the sources that grounded them on the right.
+      <h2 className="font-accent text-base text-foreground">Welcome! Curious Mind!</h2>
+      <p className="max-w-sm whitespace-pre-line text-sm text-muted-foreground">
+        {"You're early and most people are still searching.\nThe room gets quiet when you have the answer.\nAnd even quieter when you've already acted on it."}
       </p>
       <span className="block-caret text-muted-foreground" />
     </div>
