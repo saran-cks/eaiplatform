@@ -24,8 +24,12 @@ class Classifier:
     def __init__(self) -> None:
         torch.set_num_threads(config.intra_op_threads)
         logger.info("Loading %s (cache=%s)", config.model_name, config.models_dir)
-        self._tok = AutoTokenizer.from_pretrained(config.model_name)
-        self._model = AutoModelForSequenceClassification.from_pretrained(config.model_name)
+        self._tok = AutoTokenizer.from_pretrained(
+            config.model_name, revision=config.model_revision
+        )
+        self._model = AutoModelForSequenceClassification.from_pretrained(
+            config.model_name, revision=config.model_revision
+        )
         self._model.eval()
         logger.info("Prompt Guard model loaded.")
 

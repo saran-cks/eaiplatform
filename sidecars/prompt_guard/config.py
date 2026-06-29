@@ -21,6 +21,9 @@ def _env(name: str, default: str) -> str:
 @dataclass(frozen=True)
 class Config:
     model_name: str = _env("GUARD_MODEL_NAME", "meta-llama/Llama-Prompt-Guard-2-86M")
+    # Pin the model to an immutable commit so a retagged/compromised upstream can't be
+    # silently pulled (supply-chain hardening; consistent with the assume-poisoned thesis).
+    model_revision: str = _env("GUARD_MODEL_REVISION", "a8ded8e697ce7c355e395a0df51f94adb4a2fd27")
     models_dir: Path = Path(_env("GUARD_MODELS_DIR", str(_HERE / "models")))
     http_port: int = int(_env("GUARD_PORT", "8001"))
     threshold: float = float(_env("GUARD_THRESHOLD", "0.5"))      # block if P(malicious) >= this
