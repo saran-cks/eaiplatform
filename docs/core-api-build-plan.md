@@ -67,6 +67,7 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] `adapters/llm/bedrock.py` (async SSE stream) + `vllm.py` FUTURE stub
 - [x] `core/use_cases/chat/send_message.py` (full RAG order), `manage_session.py`
 - [x] `api/routes/chat.py` (SSE) + schema
+- [x] **Prompt Guard caller (front-door input screening, fail-closed)** — `GuardPort` + `HttpGuardAdapter`/`NullGuardAdapter` + DI bind; step-0 `screen()` pre-check in **both** `send_message` (chat) and `run_agent`; refuses before cache/embed/LLM/agent. Covered by `test_guard.py`. (See dev-log Session 8.)
 
 ### Session 6 — Step 9: agent pipeline + A2A  ✅ DONE
 - [x] `adapters/agent/langgraph_runner.py`, `lifecycle_manager.py` (Registry & interruption)
@@ -94,8 +95,8 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [ ] `api/routes/dashboard.py` (SSE drilldown, rate-limited) + schema
 
 ### Session 10 — Steps 13–14: tests + logging
-- [/] `tests/unit` skeletons and RAG security tests initialized (Session 10 checklist)
-- [ ] File-based logging with stdout flag (`LOG_TO_FILE`) for CloudWatch switch
+- [x] `tests/unit` + RAG-security suite (104 tests: guard, chat-security, PDP, trajectory, MCP, observability, contract, auth, logging)
+- [x] File-based logging with stdout flag (`LOG_TO_FILE`) for CloudWatch switch — `_configure_logging` in `api/main.py` (stdout always + optional `LOG_DIR/LOG_FILE` handler); `test_logging.py` covers both modes
 
 ### Deferred queue/llm backends (any time)
 - [ ] `adapters/queue/arq.py` (active) + `sqs.py` FUTURE stub

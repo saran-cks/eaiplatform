@@ -1,7 +1,15 @@
 <!-- SCOPE BANNER — read first -->
 > **SCOPE — PROMPT GUARD SIDECAR ONLY.** This document covers ONLY the **prompt guard sidecar** (`sidecars/prompt_guard/`) — a standalone **HTTP** service that screens text for prompt-injection / jailbreaks using **Llama Prompt Guard 2 (86M)**. It is a **core-project** sidecar (like `sidecars/model_server/`), CPU-only, fully decoupled. It does **NOT** cover the Core API (`src/`), the embedding sidecar, or the **Ingestion Worker**. The only thing it talks to is the Core API, over the HTTP contract below.
 
-# Prompt Guard Sidecar — Build Plan  *(DRAFT — for review before build)*
+# Prompt Guard Sidecar — Build Plan
+
+> **STATUS — BUILT & VALIDATED (2026-06-26).** Sidecar is code-complete and ran end-to-end
+> with the real gated PG2 model: classifier test passes, HTTP contract verified
+> (`/health`, `/guard`, 400/422 paths), real detection (injection → `malicious 0.999 blocked`;
+> benign → `0.0008`), bench p50 216ms / p95 276ms CPU. **Remaining:** Dockerfile build +
+> compose wiring (replace `guard_gateway` placeholder, last step). The Core-API caller
+> (`GuardPort` + httpx adapter + fail-closed `/chat`&`/agent` pre-check) is **DONE** —
+> core-api dev-log Session 8. See `prompt-guard-sidecar-dev-log.md`.
 
 ## What it is
 A small **FastAPI HTTP** service wrapping **`meta-llama/Llama-Prompt-Guard-2-86M`** — a binary classifier (**benign vs malicious**) for prompt-injection and jailbreak detection. One short text per request, interactive QPS → **CPU-only** (86M ≈ ~350MB fp32, ~tens of ms on CPU; no GPU, no RAM problem — runs locally on the dev box). Multilingual.
@@ -53,9 +61,9 @@ sidecars/prompt_guard/
 4. `scripts/bench.py` → p50/p95 on CPU.
 5. **Only now**: `Dockerfile`, replace the `guard_gateway` placeholder image in `docker-compose.yml`, bring Docker up once for the end-to-end test.
 
-## Open decisions — NEED YOUR REVIEW
-1. **Fail-mode when sidecar is down but `GUARD_ENABLED=true`** (this is a Core-API-caller policy, but decide now): **fail-open** (allow + loud alert; favors availability) vs **fail-closed** (block; favors security). Recommendation: **fail-open + telemetry by default, configurable to fail-closed** — blocking all chat on a guard outage is severe for an enterprise app.
-2. **Block threshold** (`GUARD_THRESHOLD`, score cutoff). Default **0.5**, tunable per environment.
-3. **Screen scope (phase 1)**: user query **only**. Later/optional: also screen **retrieved docs / tool outputs** for *indirect* injection (PG2 supports this). Flag as FUTURE.
-4. **Transport stays HTTP** (not gRPC) — matches existing config; simple req/resp edge screen. Confirm.
-5. **Action on malicious** lives in Core API (refuse / safe message / 4xx), not here. Confirm sidecar stays classify-only.
+## Open decisions — RESOLVED (Session 1, 2026-06-26)
+1. **Fail-mode when sidecar is down but `GUARD_ENABLED=true`** → deferred to the **Core-API caller** as policy: **fail-open + telemetry by default, configurable to fail-closed**. Sidecar itself only classifies.
+2. **Block threshold** (`GUARD_THRESHOLD`) → **0.5**, tunable per environment.
+3. **Screen scope (phase 1)** → user query **only**; indirect-injection screening of retrieved docs / tool outputs is **FUTURE**.
+4. **Transport** → **HTTP** :8001 (not gRPC), matches existing config.
+5. **Action on malicious** → lives in Core API (refuse / safe message / 4xx); sidecar stays **classify-only**.
