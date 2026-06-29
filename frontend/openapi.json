@@ -1,0 +1,1181 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "core-api",
+    "description": "Enterprise AI Platform \u2014 Core API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness probe",
+        "description": "Process is alive \u2014 always returns 200.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness probe",
+        "description": "Probe connectivity to Postgres, Valkey, and Qdrant.\n\nUses lightweight connection checks via settings-based URLs.\nOnce storage adapters are wired (Session 3+), these will use the actual\nadapter pools for deeper health verification.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more downstream services unavailable"
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "search"
+        ],
+        "summary": "Query hybrid search chunks",
+        "description": "Enforces scope-filtered hybrid retrieval on Qdrant using JWT token scopes.",
+        "operationId": "search_search_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Query text to search",
+              "title": "Query"
+            },
+            "description": "Query text to search"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Max retrieval count",
+              "default": 5,
+              "title": "Limit"
+            },
+            "description": "Max retrieval count"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "List chat sessions for the authenticated principal",
+        "description": "Return all active sessions scoped to the JWT tenant/subject.",
+        "operationId": "list_sessions_chat_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Sessions Chat Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Create a new chat session",
+        "description": "Create and return a new chat session for the authenticated principal.",
+        "operationId": "create_session_chat_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/{session_id}/history": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Retrieve message history for a session",
+        "description": "Return up to 20 recent messages for the given session.",
+        "operationId": "get_history_chat__session_id__history_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/{session_id}/message": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Send a user message and stream the assistant response (SSE)",
+        "description": "Stream an assistant response for the given user query via SSE.\n\nThe response is ``Content-Type: text/event-stream``. Each token is sent as::\n\n    data: <token_text>\\n\\n\n\nThe stream terminates with::\n\n    data: [DONE]\\n\\n\n\nOn client disconnect during streaming the generator is garbage-collected\nautomatically by Starlette's StreamingResponse.",
+        "operationId": "send_message_chat__session_id__message_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of token deltas ending with [DONE]",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/{session_id}/run": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Trigger the diagnostic agent and stream status/thoughts (SSE)",
+        "description": "Stream agent thought process and tool execution logs via SSE.\n\nEvents emitted:\n  event: thought       - Planner/Synthesizer reasoning content.\n  event: worker_start  - Notification of parallel task execution starting.\n  event: worker_done   - Notification of parallel task execution finishing.\n  event: synthesis     - Correlation reasoning start.\n  event: output        - Final synthesized Markdown answer tokens.\n  event: error         - Task failure descriptions.\n  event: done          - Loop termination marker.\n\nHandles client disconnects by calling agent_port.interrupt().",
+        "operationId": "run_agent_agent__session_id__run_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream of task/thought events ending with done",
+            "content": {
+              "text/event-stream": {}
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/{agent_session_id}/interrupt": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Interrupt a running agent task cooperatively",
+        "description": "Flag the agent runner task to stop execution.",
+        "operationId": "interrupt_agent_agent__agent_session_id__interrupt_post",
+        "parameters": [
+          {
+            "name": "agent_session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Interrupt Agent Agent  Agent Session Id  Interrupt Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/{agent_session_id}/artifacts": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "List code artifacts generated during the agent run",
+        "description": "Return Monaco-editor-ready metadata for files produced by the agent.",
+        "operationId": "list_artifacts_agent__agent_session_id__artifacts_get",
+        "parameters": [
+          {
+            "name": "agent_session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactOut"
+                  },
+                  "title": "Response List Artifacts Agent  Agent Session Id  Artifacts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/artifacts/{file_id}": {
+      "get": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Retrieve a specific generated code file by ID",
+        "description": "Return the name, code content, and parser language for a single file.",
+        "operationId": "get_artifact_agent_artifacts__file_id__get",
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/traces": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Recent traces",
+        "operationId": "get_traces_observability_traces_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/evals": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Recent evals",
+        "operationId": "get_evals_observability_evals_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/datasets": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Curated datasets",
+        "operationId": "get_datasets_observability_datasets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/drift": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Embedding drift",
+        "operationId": "get_drift_observability_drift_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DriftOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Submit human feedback",
+        "operationId": "post_feedback_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackAck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentRunRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Prompt",
+            "description": "The query, error traceback, or task instruction for the agent."
+          },
+          "peer_agent_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Peer Agent Ids",
+            "description": "Optional A2A peer agent targets (ignored in Phase 1 stub)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "title": "AgentRunRequest",
+        "description": "Payload to initiate a new autonomous agent diagnostic run."
+      },
+      "ArtifactOut": {
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "title": "File Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "mime_type": {
+            "type": "string",
+            "title": "Mime Type",
+            "default": "text/plain"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file_id",
+          "name",
+          "content"
+        ],
+        "title": "ArtifactOut",
+        "description": "Monaco-editor-compatible code file generated by the agent."
+      },
+      "ChatMessageRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Query",
+            "description": "The user's natural-language question or instruction."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Optional session title (used only when creating a new session)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "ChatMessageRequest",
+        "description": "Incoming user message payload for the chat endpoint."
+      },
+      "DriftOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "samples": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Samples"
+          },
+          "cosine_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cosine Distance"
+          },
+          "euclidean_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Euclidean Distance"
+          },
+          "drift": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drift"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "DriftOut",
+        "description": "Embedding-drift signal for a tenant."
+      },
+      "FeedbackAck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "recorded"
+          },
+          "span_id": {
+            "type": "string",
+            "title": "Span Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "span_id"
+        ],
+        "title": "FeedbackAck"
+      },
+      "FeedbackRequest": {
+        "properties": {
+          "span_id": {
+            "type": "string",
+            "title": "Span Id",
+            "description": "The trace span id the feedback applies to."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Name",
+            "description": "Annotation name.",
+            "default": "User Feedback"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Categorical verdict, e.g. 'thumbs_up'/'thumbs_down'."
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "Optional 0..1 score."
+          },
+          "explanation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "span_id"
+        ],
+        "title": "FeedbackRequest",
+        "description": "Human feedback on a turn, attached to its span as an annotation (annotator=HUMAN)."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok",
+            "examples": [
+              "ok"
+            ]
+          }
+        },
+        "type": "object",
+        "title": "HealthResponse",
+        "description": "Liveness check \u2014 always returns status ok if the process is alive."
+      },
+      "HistoryOut": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageOut"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "messages",
+          "count"
+        ],
+        "title": "HistoryOut",
+        "description": "Paginated message history response."
+      },
+      "ListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "ListOut",
+        "description": "Generic list envelope for traces/evals/datasets (backend-shaped dicts)."
+      },
+      "MessageOut": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "role",
+          "content"
+        ],
+        "title": "MessageOut",
+        "description": "Minimal message representation (used in history listings)."
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "ready": {
+            "type": "boolean",
+            "title": "Ready",
+            "examples": [
+              true
+            ]
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ready"
+        ],
+        "title": "ReadinessResponse",
+        "description": "Readiness check \u2014 reports connectivity for each downstream service."
+      },
+      "RetrievedChunkResponse": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "document_id",
+          "text",
+          "score"
+        ],
+        "title": "RetrievedChunkResponse"
+      },
+      "SearchResponse": {
+        "properties": {
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievedChunkResponse"
+            },
+            "type": "array",
+            "title": "Chunks"
+          },
+          "fusion": {
+            "type": "string",
+            "title": "Fusion"
+          },
+          "reranked": {
+            "type": "boolean",
+            "title": "Reranked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunks",
+          "fusion",
+          "reranked"
+        ],
+        "title": "SearchResponse"
+      },
+      "ServiceCheck": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "examples": [
+              "postgres"
+            ]
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "examples": [
+              true
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail",
+            "default": "",
+            "examples": [
+              "connected"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "ok"
+        ],
+        "title": "ServiceCheck",
+        "description": "Connectivity result for a single downstream service."
+      },
+      "SessionOut": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "tenant_id": {
+            "type": "string",
+            "title": "Tenant Id"
+          },
+          "subject_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "tenant_id"
+        ],
+        "title": "SessionOut",
+        "description": "Minimal session representation returned by the create session endpoint."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

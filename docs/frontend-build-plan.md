@@ -13,9 +13,10 @@ chat (RAG), the autonomous agent surface (live ReAct trace + Monaco artifacts), 
 and an observability/ops surface. No SSR, no BFF — builds to static assets, deploys behind a CDN or
 the API's static mount. See **DD-19** for why SPA-not-SSR and the full rationale.
 
-> **Status:** PLANNING ONLY (this session). No app code yet — `frontend/` is still just `.gitkeep`.
-> The **visual design** section (palette, typography, theming) is a deliberate **TBD** pending the
-> palette/style the user will provide; everything above it is the technical plan.
+> **Status:** Session F1 COMPLETE (2026-06-29) — the SPA scaffold, auth shell, and API/SSE layer
+> build green (`tsc -b && vite build`, 0 lint errors). Visual design is **locked** (below). Next up:
+> Session F2 (conversation shell + chat mode). See `docs/frontend-dev-log.md` for the F1 record and
+> the three intentional deviations (code-based router, hand-authored shadcn primitives, npm-not-pnpm).
 
 ## Locked decisions (DD-19)
 - **Static SPA, not SSR/Next.js** — every surface is behind auth over a pure JSON/SSE API; SSR buys
@@ -99,18 +100,24 @@ frontend/
 
 ## Task checklist
 
-### Session F1 — Scaffold + auth shell + API/SSE layer  ← NEXT (no infra needed)
-- [ ] Vite + React + TS project in `frontend/`; Tailwind + shadcn init; ESLint/Prettier.
-- [ ] TanStack Router tree with `__root` app shell + a protected-route guard.
-- [ ] TanStack Query client; `api/client.ts` (Bearer injection, 401→login, 403 surface).
-- [ ] `auth/AuthProvider` interface + **dev-mint adapter** (paste/generate HS256 token) + login page.
-- [ ] **Cognito OIDC adapter stubbed** behind the same interface (PKCE flow shape, config-gated, not wired).
-- [ ] `useScope` — decode `permissions[]`/`tenant_id` for conditional rendering.
-- [ ] `api/sse.ts` — `fetch-event-source` helpers for **both** stream shapes (bare-token + named-event).
-- [ ] Generate `api/generated/` types from the backend `/openapi.json`.
-- [ ] Vite dev proxy to the Core API; `.env.example` (API base URL, dev secret, Cognito placeholders).
+### Session F1 — Scaffold + auth shell + API/SSE layer  ✅ DONE (2026-06-29)
+- [x] Vite + React + TS project in `frontend/`; Tailwind + shadcn-style primitives; ESLint/Prettier.
+      *(shadcn CLI init skipped — `cn()` + CSS-variable token layer + hand-authored `Button`/`Input` in
+      shadcn style; CLI can be run later to add more primitives against the same tokens.)*
+- [x] TanStack Router tree with `__root` app shell + a protected-route guard.
+      *(code-based route tree in `src/router.tsx`, not the file-based codegen plugin — same type-safety,
+      no generated `routeTree.gen.ts` step; route components still live under `src/routes/`.)*
+- [x] TanStack Query client; `api/client.ts` (Bearer injection, 401→login + token-clear, 403 surface).
+- [x] `auth/AuthProvider` interface + **dev-mint adapter** (in-browser HS256 mint via `jose`) + login page.
+- [x] **Cognito OIDC adapter stubbed** behind the same interface (config-gated; `signIn` throws a clear
+      "designed not wired" error until the user pool + RS256/JWKS swap land).
+- [x] `useScope` — decode `permissions[]`/`tenant_id` for conditional rendering (UX-only; server re-enforces).
+- [x] `api/sse.ts` — `fetch-event-source` helpers for **both** stream shapes (bare-token + named-event),
+      with 401/403 mapping, abort/disconnect handling, and auto-retry disabled (finite streams).
+- [x] Generate `api/generated/types.ts` from the backend `/openapi.json` (dumped offline; `npm run gen:api`).
+- [x] Vite dev proxy to the Core API (per-prefix, SSE-safe); `.env.example` (API base, dev secret, Cognito).
 
-### Session F2 — Conversation shell + chat mode
+### Session F2 — Conversation shell + chat mode  ← NEXT (no infra needed)
 - [ ] `ThemeProvider` — `typer`/`dark` CSS-variable themes + toggle; fonts loaded (Courier Prime / Special
       Elite; JetBrains Mono or IBM Plex Mono). Blinking block caret.
 - [ ] `HistorySidebar` (left rail): list (`GET /chat`), create (`POST /chat`), select; history hydrate
@@ -139,8 +146,12 @@ frontend/
 
 ### Session F4 — Search + Observability/ops surface
 - [ ] Search explorer over `GET /search` (query, limit, fusion/reranked indicators, scored chunks).
-- [ ] Observability views: traces (filter by session), evals, datasets, per-tenant drift.
-- [ ] `POST /feedback` (human annotation) from a trace/eval row.
+- [ ] Observability tab = **"Open Phoenix ↗"** launcher (opens the configured Phoenix URL in a new tab),
+      **gated on the `obs:admin` claim** (`useScope().has('obs:admin')`) — hidden for non-dev users.
+      Native scoped trace/eval/dataset/drift views are **deferred (FUTURE)** until multi-tenant prod needs
+      them — see DD-19 addendum. Add `VITE_PHOENIX_URL` to env (default `http://localhost:6006`).
+- [ ] `POST /feedback` (👍/👎 + comment) wired into the **conversation** surface next to each reply
+      (lands with F2/F3), **not** the obs tab.
 
 ### Session F5 — Dashboard (BLOCKED) + polish
 - [ ] Dashboard surface — **blocked** on the server-side `/dashboard` SSE route (core-api Session 9)

@@ -210,3 +210,37 @@ the service logic is unchanged.
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+---
+
+## ST-F1: Frontend SPA — live against a running Core API — added 2026-06-29 — **PENDING**
+
+Session F1 scaffolded the frontend (`docs/frontend-dev-log.md`) and it builds green, but it has only
+been verified by `tsc -b && vite build` — no surface has talked to a live Core API yet. The dev-mint
+token, the JSON client, and the SSE layer are all unverified against the real backend. Run this once a
+Core API instance is up (it needs no other infra for the auth + a basic stream check).
+
+### Prereqs
+- Core API running on `http://localhost:8000` (`uvicorn api.main:create_app --factory`).
+- `frontend/.env` copied from `.env.example` with `VITE_DEV_JWT_SECRET` == the API's `JWT_SECRET`
+  (default `change-me-dev-only`), and issuer/audience matching (`core-api` / `core-api-clients`).
+- `cd frontend && npm install && npm run dev` (Vite on :5173, proxying the API).
+
+### What to verify
+1. **Dev-mint token is accepted.** Log in (tenant/subject/permissions) → the minted HS256 JWT passes the
+   backend `AuthMiddleware`; an authed call (e.g. `GET /chat`) returns 200, not 401. Confirms the claim
+   shape + secret/issuer/audience all match `PermissionScope.from_claims`.
+2. **401 → login bounce.** Tamper the token (or let it expire) → the client clears it and the route guard
+   redirects to `/login?redirect=…`; after re-login you land back on the original route.
+3. **403 surfaces.** Call a route requiring a permission the token lacks → `ForbiddenError` surfaced as
+   "you lack permission X", not a silent failure.
+4. **Chat SSE (bare-token).** `streamChat` against `POST /chat/{id}/message` renders tokens incrementally
+   and terminates cleanly on `data: [DONE]`; unmount/abort cancels the stream (no console errors). *(Full
+   chat UI is F2 — a minimal harness call is enough here.)*
+5. **Agent SSE (named-event).** `streamAgent` against `POST /agent/{id}/run` parses `thought`/`worker_*`/
+   `output`/`done` JSON payloads and stops on `done`. *(Full agent UI is F3.)*
+6. **Dev proxy + no CORS errors.** All calls go through the Vite proxy same-origin; no CORS console errors
+   despite the backend having no CORS middleware.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:

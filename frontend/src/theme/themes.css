@@ -1,0 +1,77 @@
+@import url("https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=JetBrains+Mono:wght@400;500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Two monospace-led themes selected by a class on <html>: `.theme-dark`
+ * (default) and `.theme-typer`. Every token is an HSL triplet so Tailwind's
+ * `<alpha-value>` syntax works. Swapping the class re-themes the whole app and
+ * all shadcn-style primitives with zero component changes (DD-19 / build plan
+ * "Visual design").
+ */
+
+@layer base {
+  /* Theme: dark — CLI tool, Interstellar feel. Pitch black, cool silver. */
+  .theme-dark {
+    --background: 240 6% 2%; /* ~#050505 */
+    --surface: 240 4% 5%; /* ~#0C0C0D */
+    --foreground: 222 11% 78%; /* ~#C0C4CC cool silver */
+    --muted: 240 4% 10%;
+    --muted-foreground: 222 8% 55%;
+    --accent: 222 11% 78%;
+    --accent-foreground: 240 6% 4%;
+    --border: 240 4% 14%;
+    --ring: 222 14% 60%;
+    --destructive: 0 62% 52%;
+    --destructive-foreground: 0 0% 98%;
+    --radius: 0.25rem;
+    --font-body: "JetBrains Mono";
+    --font-accent: "JetBrains Mono";
+    --text-glow: 0 0 6px hsl(222 30% 70% / 0.18);
+    --paper-grain: none;
+  }
+
+  /* Theme: typer — vintage type machine. Cream paper, warm ink black. */
+  .theme-typer {
+    --background: 44 45% 90%; /* ~#F4ECD8 cream */
+    --surface: 44 56% 94%; /* ~#FAF4E6 */
+    --foreground: 40 6% 10%; /* ~#1C1B19 warm ink */
+    --muted: 44 30% 84%;
+    --muted-foreground: 40 6% 35%;
+    --accent: 40 6% 10%;
+    --accent-foreground: 44 56% 94%;
+    --border: 40 12% 70%;
+    --ring: 40 10% 40%;
+    --destructive: 4 64% 44%;
+    --destructive-foreground: 44 56% 96%;
+    --radius: 0.125rem;
+    --font-body: "Courier Prime";
+    --font-accent: "Special Elite";
+    --text-glow: none;
+    --paper-grain: none;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background font-body text-foreground antialiased;
+  }
+}
+
+@layer components {
+  /* The signature blinking block caret used in the composer and tickers. */
+  .block-caret::after {
+    content: "▋";
+    @apply ml-0.5 inline-block animate-caret-blink text-accent;
+  }
+}
