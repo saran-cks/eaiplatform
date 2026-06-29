@@ -232,7 +232,7 @@ async def send_message(
                     yield f"data: {safe}\n\n"
         except Exception as exc:
             logger.exception("SSE pipeline error in session %s: %s", session_id, exc)
-            yield f"event: error\ndata: {exc!s}\n\n"
+            yield "event: error\ndata: An internal error occurred while processing the request.\n\n"
         finally:
             yield "data: [DONE]\n\n"
 

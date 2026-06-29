@@ -106,7 +106,12 @@ async def run_agent(
             await container.agent.interrupt(agent_session_id=agent_session_id)
         except Exception as exc:
             logger.exception("SSE agent pipeline error: %s", exc)
-            err_payload = json.dumps({"message": str(exc), "source": "orchestrator"})
+            err_payload = json.dumps(
+                {
+                    "message": "An internal error occurred during agent execution.",
+                    "source": "orchestrator",
+                }
+            )
             yield f"event: error\ndata: {err_payload}\n\n"
         finally:
             done_payload = json.dumps({"session_id": agent_session_id, "truncated": truncated})
