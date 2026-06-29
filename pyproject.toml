@@ -49,6 +49,10 @@ dev = [
     "mypy>=1.13",
     "grpcio-tools>=1.68",
 ]
+security = [
+    "bandit>=1.9.4",
+    "pip-audit>=2.10.1",
+]
 
 [build-system]
 requires = ["hatchling"]

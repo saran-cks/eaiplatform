@@ -145,3 +145,6 @@ logs/
 
 # Project session archive
 archive.md
+
+# Claude Code — keep personal/local config out of git; share skills + team hooks
+.claude/settings.local.json
