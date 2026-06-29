@@ -16,11 +16,11 @@ services:
       qdrant:
         condition: service_healthy
       model_server:
-        condition: service_started   # user image; switch to service_healthy once it exposes one
+        condition: service_healthy
       phoenix:
         condition: service_started
       guard_gateway:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     networks: [core]
 
@@ -52,17 +52,47 @@ services:
     networks: [core]
 
   model_server:
-    # FUTURE/EXTERNAL: replace with your bge-m3 + reranker gRPC image.
-    image: your-model-server-image
+    # bge-m3 dense+sparse embeddings over gRPC (CPU-only sidecar).
+    build:
+      context: .
+      dockerfile: sidecars/model_server/Dockerfile
+    environment:
+      EMBED_BACKEND: flag            # FP32 reference path; ONNX int8 quantization still pending.
+      HF_HUB_OFFLINE: "1"            # weights are pre-downloaded into the mounted models/ dir.
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      # Bind the local HF cache so the 7GB bge-m3 weights are NOT re-downloaded.
+      - ./sidecars/model_server/models:/app/sidecars/model_server/models
     ports:
       - "50051:50051"
+    healthcheck:
+      # No HTTP surface (gRPC); the port only binds after model load + warmup, so a
+      # successful TCP connect ≈ ready. python is in the image; curl is not.
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost',50051),2).close()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 180s             # FP32 bge-m3 load + warmup is slow on CPU.
     networks: [core]
 
   guard_gateway:
-    # FUTURE/EXTERNAL: replace with your Prompt Guard 86M HTTP image.
-    image: your-guard-image
+    # Llama Prompt Guard 2 (86M) injection/jailbreak screening over HTTP (CPU-only sidecar).
+    build:
+      context: .
+      dockerfile: sidecars/prompt_guard/Dockerfile
+    environment:
+      HF_HUB_OFFLINE: "1"            # PG2 weights are pre-downloaded into the mounted models/ dir.
+      TRANSFORMERS_OFFLINE: "1"
+    volumes:
+      - ./sidecars/prompt_guard/models:/app/sidecars/prompt_guard/models
     ports:
       - "8001:8001"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
     networks: [core]
 
   postgres:

@@ -6,8 +6,12 @@
 > **STATUS — BUILT & VALIDATED (2026-06-26).** Sidecar is code-complete and ran end-to-end
 > with the real gated PG2 model: classifier test passes, HTTP contract verified
 > (`/health`, `/guard`, 400/422 paths), real detection (injection → `malicious 0.999 blocked`;
-> benign → `0.0008`), bench p50 216ms / p95 276ms CPU. **Remaining:** Dockerfile build +
-> compose wiring (replace `guard_gateway` placeholder, last step). The Core-API caller
+> benign → `0.0008`), bench p50 216ms / p95 276ms CPU. **Docker image + compose wiring DONE
+> (2026-06-29, Session 3):** uv-based `Dockerfile` (CPU-only, `torch 2.12.1+cpu`, 382MB), the
+> `guard_gateway` placeholder is replaced with a real build, weights bind-mounted, offline mode,
+> `/health` healthcheck. **Live containerized run is BLOCKED on the dev box** (Docker 3.75GB +
+> Windows gRPC-FUSE bind mount → ENOMEM under torch); re-run where Docker has ≥8GB + VirtioFS
+> (smoke test **ST-5**), or keep running the sidecar natively. The Core-API caller
 > (`GuardPort` + httpx adapter + fail-closed `/chat`&`/agent` pre-check) is **DONE** —
 > core-api dev-log Session 8. See `prompt-guard-sidecar-dev-log.md`.
 
@@ -60,6 +64,8 @@ sidecars/prompt_guard/
 3. `app.py` → FastAPI `/guard` + `/health`, threadpool offload, warmup; smoke test with curl/httpx.
 4. `scripts/bench.py` → p50/p95 on CPU.
 5. **Only now**: `Dockerfile`, replace the `guard_gateway` placeholder image in `docker-compose.yml`, bring Docker up once for the end-to-end test.
+   - [x] **uv `Dockerfile` + compose wiring** (2026-06-29, Session 3): image builds CPU-only (382MB, `torch 2.12.1+cpu`); real build replaces the placeholder; weights bind-mounted + offline; `/health` healthcheck; `core_api depends_on … service_healthy`.
+   - [ ] **Live containerized end-to-end run** — BLOCKED on this box (Docker 3.75GB + Windows gRPC-FUSE bind mount → ENOMEM under torch). Re-run with Docker ≥8GB + VirtioFS, or natively. See **ST-5**.
 
 ## Open decisions — RESOLVED (Session 1, 2026-06-26)
 1. **Fail-mode when sidecar is down but `GUARD_ENABLED=true`** → deferred to the **Core-API caller** as policy: **fail-open + telemetry by default, configurable to fail-closed**. Sidecar itself only classifies.

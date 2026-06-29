@@ -4,17 +4,22 @@
 .gitignore
 
 # Python/Environment
-__pycache__/
+**/__pycache__
 *.pyc
 *.pyo
 *.pyd
-.venv
+**/.venv
 venv
 env
 ENV
 .env
 .env.*
 !.env.example
+
+# Model weight caches — mounted as runtime volumes, never baked into images
+# (bge-m3 ~7GB, Llama Prompt Guard 2 ~1.2GB).
+sidecars/model_server/models
+sidecars/prompt_guard/models
 
 # IDEs
 .vscode

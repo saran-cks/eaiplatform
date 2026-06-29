@@ -5,7 +5,7 @@ description = "Llama Prompt Guard 2 (86M) injection/jailbreak screening sidecar 
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "transformers>=4.40.0",
-    "torch>=2.2.0",                 # CPU build (install from the cpu index — see Dockerfile)
+    "torch>=2.2.0",                 # CPU-only — pinned to the pytorch-cpu index below.
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "pydantic>=2.6.0",
@@ -13,6 +13,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "httpx>=0.27.0"]
+
+# CPU-only sidecar: pull torch from the pytorch CPU index so the lock pins the
+# small +cpu wheel instead of the multi-GB CUDA build from PyPI. `explicit = true`
+# means ONLY torch resolves from here; everything else stays on PyPI.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
 
 # Run-from-source service (`python -m sidecars.prompt_guard.app`), not a published
 # library. pyproject is the dependency source of truth for dev
