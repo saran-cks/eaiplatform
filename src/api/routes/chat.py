@@ -13,6 +13,7 @@ SSE format:
 
 from __future__ import annotations
 
+import json
 import logging
 from uuid import uuid4
 
@@ -205,14 +206,26 @@ async def send_message(
     )
 
     # 4. Build the SSE generator
+    #
+    # The use case hands back the turn's LLM span id via ``on_span``; we relay it
+    # once as a named ``meta`` event so the client can attach human feedback to
+    # this turn (POST /feedback). It rides on a distinct event name, never as a
+    # ``data:`` token, so the bare-token stream contract is unchanged.
+    span_box: dict[str, str] = {}
+
     async def _event_generator():
+        meta_sent = False
         try:
             async for token in send_uc.execute(
                 session=session,
                 query=body.query,
                 scope=scope,
                 history=history,
+                on_span=lambda sid: span_box.__setitem__("span_id", sid),
             ):
+                if not meta_sent and "span_id" in span_box:
+                    yield f"event: meta\ndata: {json.dumps({'span_id': span_box['span_id']})}\n\n"
+                    meta_sent = True
                 if token:
                     # Escape newlines inside the token so they don't break SSE framing
                     safe = token.replace("\n", " ")

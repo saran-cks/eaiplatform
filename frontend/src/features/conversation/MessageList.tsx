@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { Feedback } from "./Feedback";
 import { Markdown } from "./Markdown";
 import type { ChatMessage } from "./useConversation";
 
@@ -46,45 +47,37 @@ export function MessageList({ messages, isStreaming, loadingHistory }: MessageLi
       {messages.map((m) => {
         const isUser = m.role === "user";
         const isStreamingThis = m.status === "streaming";
+        if (isUser) {
+          // User turn: a soft borderless bubble (radial wash that fades into the
+          // page), right-aligned and shrink-to-fit. Keeps the "you" label.
+          return (
+            <div key={m.id} className="flex min-w-0 flex-col items-end gap-1">
+              <span className="font-accent text-[0.65rem] uppercase tracking-wider text-muted-foreground">
+                you
+              </span>
+              <div className="bubble-user max-w-[85%] rounded-2xl px-4 py-2">
+                <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+                  {m.content}
+                </p>
+              </div>
+            </div>
+          );
+        }
+        // Assistant turn: no box, no label — just the rendered answer, full width.
         return (
-          <div
-            key={m.id}
-            className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}
-          >
-            <span className="font-accent text-[0.65rem] uppercase tracking-wider text-muted-foreground">
-              {isUser ? "you" : "assistant"}
-            </span>
-            <div
-              className={cn(
-                "max-w-full rounded-md px-3 py-2",
-                isUser
-                  ? "bg-muted text-foreground"
-                  : "border border-border bg-surface text-foreground",
-                m.status === "error" && "border-destructive",
-              )}
-            >
-              {isUser ? (
-                <p className="whitespace-pre-wrap text-sm">{m.content}</p>
+          <div key={m.id} className="flex min-w-0 flex-col items-start gap-1">
+            <div className="min-w-0 max-w-full break-words text-foreground">
+              {m.content ? (
+                <Markdown content={m.content} />
               ) : (
-                <>
-                  {m.content ? (
-                    <Markdown content={m.content} />
-                  ) : (
-                    isStreamingThis && (
-                      <span className="block-caret text-muted-foreground" />
-                    )
-                  )}
-                  {m.content && isStreamingThis && (
-                    <span className="block-caret" />
-                  )}
-                  {m.status === "error" && (
-                    <p className="mt-1 text-xs text-destructive">
-                      stream error: {m.error}
-                    </p>
-                  )}
-                </>
+                isStreamingThis && <span className="block-caret text-muted-foreground" />
+              )}
+              {m.content && isStreamingThis && <span className="block-caret" />}
+              {m.status === "error" && (
+                <p className="mt-1 text-xs text-destructive">stream error: {m.error}</p>
               )}
             </div>
+            {m.status === "done" && m.spanId && <Feedback spanId={m.spanId} />}
           </div>
         );
       })}

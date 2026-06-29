@@ -27,42 +27,49 @@ function StepRow({ step }: { step: ActionStep }) {
 }
 
 /**
- * Ephemeral agent activity ticker. While the run is live it shows each step;
- * once the run completes it fades and collapses under a `›` drilldown so the
- * transcript stays clean but the trace is one click away (DD-19 / F3).
+ * Ephemeral agent activity ticker. While the run is live it streams the *current*
+ * action on a single transient line just above the composer (no multi-step box);
+ * once the run completes the line fades and collapses under a `›` drilldown that
+ * re-expands the full trace, so the transcript stays clean (DD-19 / F3).
  */
 export function ActionStream({ steps, active }: { steps: ActionStep[]; active: boolean }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
 
-  if (!active) {
+  if (active) {
+    // The action in flight: the latest still-active step, else the most recent.
+    const current =
+      [...steps].reverse().find((s) => s.status === "active") ?? steps[steps.length - 1];
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-1 opacity-70 transition-opacity hover:opacity-100">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="font-accent text-xs text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {open ? "▾" : "›"} {steps.length} agent step{steps.length === 1 ? "" : "s"}
-        </button>
-        {open && (
-          <ul className="mt-1 border-l border-border pl-3">
-            {steps.map((s) => (
-              <StepRow key={s.id} step={s} />
-            ))}
-          </ul>
+      <div className="mx-auto flex w-full max-w-3xl items-baseline gap-2 px-4 py-1">
+        <span className="font-accent text-xs text-accent">{KIND_GLYPH[current.kind]}</span>
+        <span className="min-w-0 truncate text-xs text-foreground">{current.label}</span>
+        {current.detail && (
+          <span className="min-w-0 truncate text-[0.7rem] text-muted-foreground">
+            — {current.detail}
+          </span>
         )}
+        <span className="block-caret text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-2">
-      <ul className="rounded-md border border-border bg-surface/60 px-3 py-2">
-        {steps.map((s) => (
-          <StepRow key={s.id} step={s} />
-        ))}
-      </ul>
+    <div className="mx-auto w-full max-w-3xl px-4 py-1 opacity-70 transition-opacity hover:opacity-100">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="font-accent text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {open ? "▾" : "›"} {steps.length} agent step{steps.length === 1 ? "" : "s"}
+      </button>
+      {open && (
+        <ul className="mt-1 border-l border-border pl-3">
+          {steps.map((s) => (
+            <StepRow key={s.id} step={s} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

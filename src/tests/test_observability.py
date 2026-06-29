@@ -455,3 +455,91 @@ async def test_chat_pipeline_emits_spans_and_schedules_eval():
 
     await asyncio.sleep(0.02)  # let the fire-and-forget eval task run
     assert evaluator.calls == ["fake-span"]
+
+
+@pytest.mark.asyncio
+async def test_chat_execute_reports_llm_span_id_via_on_span():
+    """The chat pipeline hands the LLM span id to the on_span callback exactly once
+    (before the first token) so the HTTP layer can surface it for feedback (#4)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from core.domain.entities.session import Session
+    from core.domain.value_objects.guard_verdict import GuardVerdict
+    from core.domain.value_objects.retrieval_result import RetrievalResult
+    from core.use_cases.chat.send_message import SendChatMessageUseCase
+
+    obs = _CapturingObs()
+    store = AsyncMock()
+    cache = AsyncMock()
+    cache.get.return_value = None
+    retriever = AsyncMock()
+    retriever.embed.return_value = [0.1, 0.2]
+    retriever.search.return_value = RetrievalResult(chunks=(), fusion="rrf", reranked=False)
+    guard = AsyncMock()
+    guard.screen.return_value = GuardVerdict.allow()
+    llm = MagicMock()
+    llm.stream.return_value = _MockAsyncIterator(["Hello ", "world"])
+
+    uc = SendChatMessageUseCase(
+        store=store,
+        cache=cache,
+        retriever=retriever,
+        llm=llm,
+        guard=guard,
+        retrieval_top_k=5,
+        cache_response_ttl=3600,
+        observability=obs,
+    )
+    session = Session(session_id="s1", tenant_id="t1")
+    scope = _scope("read")
+
+    seen: list[str] = []
+    tokens = [
+        t
+        async for t in uc.execute(
+            session=session, query="hi", scope=scope, history=[], on_span=seen.append
+        )
+    ]
+    assert tokens == ["Hello ", "world"]  # token stream is unchanged
+    assert seen == ["fake-span"]  # span id reported once, not per token
+
+
+@pytest.mark.asyncio
+async def test_chat_execute_on_span_not_called_on_cache_hit():
+    """Cache hits open no LLM span, so on_span is never invoked (no feedback target)."""
+    from unittest.mock import AsyncMock
+
+    from core.domain.entities.session import Session
+    from core.domain.value_objects.guard_verdict import GuardVerdict
+    from core.use_cases.chat.send_message import SendChatMessageUseCase
+
+    obs = _CapturingObs()
+    store = AsyncMock()
+    cache = AsyncMock()
+    cache.get.return_value = "Cached answer"
+    retriever = AsyncMock()
+    guard = AsyncMock()
+    guard.screen.return_value = GuardVerdict.allow()
+
+    uc = SendChatMessageUseCase(
+        store=store,
+        cache=cache,
+        retriever=retriever,
+        llm=AsyncMock(),
+        guard=guard,
+        retrieval_top_k=5,
+        cache_response_ttl=3600,
+        observability=obs,
+    )
+    session = Session(session_id="s1", tenant_id="t1")
+    scope = _scope("read")
+
+    seen: list[str] = []
+    tokens = [
+        t
+        async for t in uc.execute(
+            session=session, query="hi", scope=scope, history=[], on_span=seen.append
+        )
+    ]
+    assert tokens == ["Cached answer"]
+    assert seen == []

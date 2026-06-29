@@ -70,7 +70,7 @@ const components: Components = {
 
 export function Markdown({ content }: { content: string }) {
   return (
-    <div className="text-sm">
+    <div className="text-sm [overflow-wrap:anywhere]">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

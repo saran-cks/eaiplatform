@@ -26,6 +26,8 @@ export interface ChatMessage {
   content: string;
   status: "done" | "streaming" | "error";
   error?: string;
+  /** LLM span id surfaced on the chat SSE (`event: meta`); enables feedback. */
+  spanId?: string;
 }
 
 export interface ActionStep {
@@ -164,6 +166,14 @@ export function useConversation() {
     [],
   );
 
+  const setSpanId = useCallback(
+    (assistantId: string, spanId: string) =>
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, spanId } : m)),
+      ),
+    [],
+  );
+
   const markError = useCallback(
     (assistantId: string, message: string) =>
       setMessages((prev) =>
@@ -262,6 +272,9 @@ export function useConversation() {
             title: isNew ? deriveTitle(text) : undefined,
             signal: controller.signal,
             onToken: (t) => appendTokenTo(assistantId, t),
+            onMeta: (meta) => {
+              if (meta.span_id) setSpanId(assistantId, meta.span_id);
+            },
             onError,
           });
         }
@@ -280,7 +293,16 @@ export function useConversation() {
         if (isNew) void qc.invalidateQueries({ queryKey: queryKeys.sessions });
       }
     },
-    [activeId, isStreaming, qc, runSourcesSearch, appendTokenTo, markError, handleAgentEvent],
+    [
+      activeId,
+      isStreaming,
+      qc,
+      runSourcesSearch,
+      appendTokenTo,
+      setSpanId,
+      markError,
+      handleAgentEvent,
+    ],
   );
 
   return {

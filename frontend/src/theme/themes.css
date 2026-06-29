@@ -95,4 +95,16 @@
     content: "▋";
     @apply ml-0.5 inline-block animate-caret-blink text-accent;
   }
+
+  /* User message "bubble": no border. A soft radial wash of --muted that is
+     fullest behind the text and fades to the page background at the edges, so
+     the message reads as lifted-off-paper rather than boxed (quick-fix 1). */
+  .bubble-user {
+    background: radial-gradient(
+      120% 130% at 50% 50%,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted) / 0.55) 55%,
+      hsl(var(--muted) / 0) 100%
+    );
+  }
 }

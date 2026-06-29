@@ -21,8 +21,9 @@ const MODES: { value: Mode; label: string }[] = [
 /** Tallest the box grows before it starts scrolling internally (px). */
 const MAX_HEIGHT = 240;
 
-/** Query box + chat/agent mode toggle. Agent mode is gated until F3. The
- *  textarea auto-grows with its content so the whole draft stays visible. */
+/** Query box + chat/agent mode toggle. The textarea auto-grows with its content
+ *  so the whole draft stays visible; the circular `>>` button sends. In agent
+ *  mode the live actions stream on a single line above the composer (ActionStream). */
 export function Composer({ mode, onModeChange, onSubmit, onStop, isStreaming }: ComposerProps) {
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -71,11 +72,6 @@ export function Composer({ mode, onModeChange, onSubmit, onStop, isStreaming }: 
                 {m.label}
               </button>
             ))}
-            {mode === "agent" && (
-              <span className="ml-1 text-xs text-muted-foreground">
-                multi-step agent · streams its actions above
-              </span>
-            )}
           </div>
         </div>
         <div className="flex items-end gap-2 px-3 pb-3 pt-2">
@@ -89,12 +85,24 @@ export function Composer({ mode, onModeChange, onSubmit, onStop, isStreaming }: 
             className="min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-2 font-body text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border/40 [&::-webkit-scrollbar-track]:bg-transparent"
           />
           {isStreaming ? (
-            <Button variant="destructive" onClick={onStop}>
-              stop
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={onStop}
+              aria-label="stop"
+              className="shrink-0 rounded-full"
+            >
+              <span className="text-xs leading-none">{"■"}</span>
             </Button>
           ) : (
-            <Button onClick={submit} disabled={!canSend}>
-              send
+            <Button
+              size="icon"
+              onClick={submit}
+              disabled={!canSend}
+              aria-label="send"
+              className="shrink-0 rounded-full font-accent"
+            >
+              <span className="leading-none tracking-tighter">{">>"}</span>
             </Button>
           )}
         </div>

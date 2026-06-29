@@ -13,14 +13,15 @@ chat (RAG), the autonomous agent surface (live ReAct trace + Monaco artifacts), 
 and an observability/ops surface. No SSR, no BFF — builds to static assets, deploys behind a CDN or
 the API's static mount. See **DD-19** for why SPA-not-SSR and the full rationale.
 
-> **Status:** Session F3 MOSTLY COMPLETE (2026-06-29) — agent mode is live and demoable (build green,
-> `tsc -b && vite build`, 0 lint errors). The composer's agent toggle is ungated; a **mock agent stream**
-> (`VITE_MOCK_AGENT`, on by default) drives the full surface without the live LangGraph backend: the
-> ephemeral **`ActionStream`** ticker (fades + collapses under a `›` drilldown on completion), `output`
-> tokens into the answer, and an interrupt button (real runs also fire `POST /agent/{id}/interrupt`).
-> **Remaining F3 item:** the Monaco `ArtifactViewer` (deferred — heavy dep). F2 landed the conversation
-> surface + chat mode. Visual design is **locked** (below). See `docs/frontend-dev-log.md` for the
-> F1/F2/F3 records and the intentional deviations.
+> **Status:** Session F4 DONE (2026-06-29) — search explorer, the `obs:admin`-gated "Open Phoenix ↗"
+> launcher, and conversation feedback (👍/👎) are live (build green, `tsc -b && vite build`, 0 lint errors).
+> Feedback was unblocked by a backend addition: the chat SSE now carries the turn `span_id` on an
+> `event: meta` line (core-api Session 19). This session also reworked the conversation surface per request —
+> assistant turns are unboxed/unlabelled, the user bubble is a borderless radial fade, long lines wrap, the
+> agent `ActionStream` streams on a single line above the composer, and send is a circular `>>` button.
+> **Remaining F3 item:** the Monaco `ArtifactViewer` (deferred — heavy dep). Agent mode still runs on the
+> **mock stream** (`VITE_MOCK_AGENT`, on by default) for demos. Visual design is **locked** (below). See
+> `docs/frontend-dev-log.md` for the F1–F4 records and the intentional deviations.
 
 ## Locked decisions (DD-19)
 - **Static SPA, not SSR/Next.js** — every surface is behind auth over a pure JSON/SSE API; SSR buys
@@ -136,9 +137,8 @@ frontend/
       stands in for structured citations — flagged in DD-19).
 - [x] Empty/loading/error states; markdown render of assistant output (`react-markdown` + `remark-gfm`,
       themed off the token layer — no `@tailwindcss/typography`).
-- [ ] **Feedback (👍/👎) deferred** — `POST /feedback` needs the turn's `span_id`, which the chat SSE
-      doesn't emit today. Blocked on a small backend addition (surface the span id on the stream); tracked
-      as FUTURE so it lands next to each reply when available (DD-19 addendum).
+- [x] **Feedback (👍/👎)** — landed in **F4**. The backend now emits the turn's `span_id` on the chat SSE as
+      an `event: meta` line (core-api Session 19), so `Feedback.tsx` posts to `/feedback` next to each reply.
 
 ### Session F3 — Agent mode + ephemeral action ticker + Monaco  ✅ MOSTLY DONE (2026-06-29)
 - [x] **Agent mode** via the toggle (now ungated): `POST /agent/{id}/run` consuming the **named-event SSE**
@@ -163,14 +163,16 @@ frontend/
 > streams bare tokens only today). **Deferred — not needed now.** When that backend addition lands, chat
 > plugs the same component into those events; no FE redesign required.
 
-### Session F4 — Search + Observability/ops surface
-- [ ] Search explorer over `GET /search` (query, limit, fusion/reranked indicators, scored chunks).
-- [ ] Observability tab = **"Open Phoenix ↗"** launcher (opens the configured Phoenix URL in a new tab),
-      **gated on the `obs:admin` claim** (`useScope().has('obs:admin')`) — hidden for non-dev users.
-      Native scoped trace/eval/dataset/drift views are **deferred (FUTURE)** until multi-tenant prod needs
-      them — see DD-19 addendum. Add `VITE_PHOENIX_URL` to env (default `http://localhost:6006`).
-- [ ] `POST /feedback` (👍/👎 + comment) wired into the **conversation** surface next to each reply
-      (lands with F2/F3), **not** the obs tab.
+### Session F4 — Search + Observability/ops surface  ✅ DONE (2026-06-29)
+- [x] Search explorer over `GET /search` (query, 5/10/20 limit toggle, fusion + reranked indicators, scored
+      chunks with rank/doc/score/text). `routes/search/index.tsx`; aborts the prior request on resubmit.
+- [x] Observability tab = **"Open Phoenix ↗"** launcher (opens `VITE_PHOENIX_URL` in a new tab),
+      **gated on the `obs:admin` claim** (`useScope().has('obs:admin')`) — non-admins see a "you lack
+      obs:admin" note. Native scoped trace/eval/dataset/drift views remain **deferred (FUTURE)** (DD-19
+      addendum). Added `VITE_PHOENIX_URL` (default `http://localhost:6006`) to `env.ts` + `.env.example`.
+- [x] `POST /feedback` (👍/👎) wired into the **conversation** surface next to each reply (`Feedback.tsx`),
+      **not** the obs tab. Unblocked by the backend now emitting the turn `span_id` on the chat SSE
+      (`event: meta`, core-api Session 19). Emojis forced to **text color** via a U+FE0E variation selector.
 
 ### Session F5 — Dashboard (BLOCKED) + polish
 - [ ] Dashboard surface — **blocked** on the server-side `/dashboard` SSE route (core-api Session 9)

@@ -14,6 +14,7 @@ import { useConversation } from "./useConversation";
  */
 export function ConversationView() {
   const [mode, setMode] = useState<Mode>("chat");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const {
     sessions,
@@ -38,6 +39,8 @@ export function ConversationView() {
         activeId={activeId}
         onSelect={(id) => void selectSession(id)}
         onNew={newConversation}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((v) => !v)}
       />
       <section className="flex min-w-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto">

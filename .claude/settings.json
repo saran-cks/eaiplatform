@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/check_commit_oneline.py",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_commit_oneline.py\"",
             "statusMessage": "commit message check"
           }
         ]

@@ -179,3 +179,79 @@ artifact viewer is the one F3 item left.
 ### Next
 F4 (Search explorer + permission-gated "Open Phoenix ↗" launcher), or close out F3 by adding the Monaco
 artifact viewer. Feedback 👍/👎 still waits on the backend emitting a `span_id` on the stream.
+
+## Session F4: Search + observability launcher + feedback (with the backend span_id), plus conversation-surface polish — 2026-06-29
+
+**Target**: land Session F4 (retrieval explorer, the `obs:admin`-gated Phoenix launcher, and feedback wired
+into the conversation) — and fold in the backend gap F2/F3 were blocked on (the chat stream now carries the
+turn's `span_id`). Also a batch of conversation-surface fixes the user asked for.
+
+### Conversation-surface fixes
+- **Assistant turns are no longer boxed.** `MessageList` renders the assistant answer as plain full-width
+  markdown — no border, no surface fill, **no "assistant" label**. Only the user turn keeps a label ("you").
+- **User bubble is borderless with a soft fade.** New `.bubble-user` component class in `theme/themes.css`
+  paints a radial wash of `--muted` (fullest behind the text, → transparent at the edges) so the message
+  reads as lifted-off-paper and **mixes into the page background** instead of sitting in a bordered box.
+- **Long lines wrap.** Added `break-words` + `[overflow-wrap:anywhere]` to the user paragraph and the
+  Markdown wrapper, and `min-w-0` on the flex columns, so unbroken tokens/URLs never push the layout sideways
+  past the viewport.
+- **Agent actions stream on one line.** `ActionStream`'s **active** state is now a single transient line
+  above the composer (current step: glyph + label + optional detail + caret) instead of a multi-row bordered
+  box; on completion it still fades and collapses under the `› N agent steps` drilldown. Removed the
+  composer's "multi-step agent · streams its actions above" hint.
+- **Send is a circular `>>` button.** The composer's send/stop controls became `size="icon"` + `rounded-full`
+  (send shows `>>`, stop shows `■`).
+- **History rail collapses.** A toggle on the rail's far-left edge collapses `HistorySidebar` to a thin
+  strip (a single `»` expand button); `«` collapses it again. `sidebarCollapsed` lives in `ConversationView`.
+  Also renamed the rail's action **"new conversation" → "new chat"**.
+
+### Feedback 👍/👎 — unblocked by the backend (#4)
+- **Backend now surfaces the span id.** `POST /chat/{id}/message` emits a one-shot **`event: meta`** line
+  (`data: {"span_id": …}`) right before the first token (core-api Session 19). It rides a distinct event
+  name, so the bare-token stream contract the FE depends on is unchanged.
+- **`sse.ts`**: `streamChat` gained an `onMeta` callback; the `meta` event is parsed and never treated as a
+  token (malformed meta is swallowed — it can't corrupt the answer).
+- **`useConversation`**: `ChatMessage` carries an optional `spanId`; `onMeta` stamps it on the in-flight
+  assistant message.
+- **`Feedback.tsx`**: thumbs up/down under each *done* assistant reply that has a `spanId`; posts to
+  `/feedback` (`label: thumbs_up|thumbs_down`, `score: 1|0`, `annotator=HUMAN` server-side). The glyphs carry
+  a **U+FE0E** variation selector to force **text-style (monochrome)** rendering so they inherit the theme
+  text color rather than the OS color-emoji palette (per the request that the emojis match the text color).
+
+### Search explorer (`routes/search/index.tsx`)
+- Query box + a 5/10/20 limit toggle over `GET /search`. Shows **fusion** method and a **reranked / not
+  reranked** indicator as chips, the chunk count, and each scored chunk (rank, `document_id`, score, text,
+  `chunk_id`). Aborts the prior request on resubmit. Same scope-filtered retrieval chat uses, so it doubles
+  as a "what would the model have seen" inspector.
+
+### Observability launcher (`routes/observability/index.tsx`)
+- **"Open Phoenix ↗"** link gated on `useScope().has("obs:admin")` — non-admins see a "you lack obs:admin"
+  note. Native scoped trace/eval/dataset/drift views stay deferred (DD-19 addendum). Added
+  `env.phoenixUrl` (`VITE_PHOENIX_URL`, default `http://localhost:6006`) + `.env.example` entry.
+
+### Issues faced & resolved
+- **Stuck shell cwd broke the repo hooks.** A `cd frontend` in the Bash tool persisted as the session
+  working directory, after which the repo's `PreToolUse` (commit-oneline) and `PostToolUse` (ruff_check)
+  hooks — both configured with **relative** script paths — failed with "can't open file …\frontend\.claude
+  \hooks\…". Reset the cwd to repo root and **anchored both hook commands to `$CLAUDE_PROJECT_DIR`**
+  (`.claude/settings.json` + `.claude/settings.local.json`) so they're cwd-independent going forward.
+- **Color emoji vs. monochrome.** Plain 👍/👎 render in the OS emoji color palette and ignore CSS `color`.
+  Appending the **U+FE0E** text-presentation variation selector makes them inherit `currentColor` — the
+  requested "same color as the text" behavior — with no icon-font dependency.
+
+### Verification
+- `npm run build` (`tsc -b && vite build`) green — 533 modules, 0 type errors.
+- `npm run lint` — 0 errors, same 4 pre-existing `react-refresh` warnings (none new).
+- Backend (#4): `uv run pytest src/tests -q` → **108 passed**; touched files ruff-clean. New unit tests assert
+  `on_span` reports the LLM span id exactly once (token stream unchanged) and is **not** called on a cache hit.
+- End-to-end feedback round-trip + search + the live Phoenix launcher are smoke test **ST-F4**
+  (`docs/smoke-tests.md`, PENDING — needs a running Core API + Phoenix).
+
+### Known limitations / deferred
+- **Monaco `ArtifactViewer` still not built** — the one remaining F3 bullet (heavy dep).
+- **Feedback only on fresh (non-cached) chat turns** — cache hits open no LLM span, so no `span_id`, so no
+  thumbs. Agent-mode replies have no `span_id` yet either. Acceptable; revisit if needed.
+
+### Next
+Close out F3 (Monaco artifact viewer), or F5 polish (a11y/responsive/error boundaries). Dashboard stays
+blocked on the server-side `/dashboard` SSE route.

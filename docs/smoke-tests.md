@@ -302,3 +302,34 @@ today against a **mock** stream (`VITE_MOCK_AGENT` on by default) for demos; thi
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+## ST-F4: Frontend search + feedback (span_id round-trip) + Phoenix launcher — added 2026-06-29 — **PENDING**
+
+Session F4 added the search explorer, conversation feedback (👍/👎) backed by the new chat-SSE `span_id`
+(`event: meta`, core-api Session 19), and the `obs:admin`-gated "Open Phoenix ↗" launcher. This ST verifies
+the parts that need live services (Core API + Qdrant + Phoenix).
+
+### Prereqs
+- Same as ST-F1/ST-F2: a running Core API reachable by the SPA, a valid dev-mint JWT, ingested chunks in
+  Qdrant within the caller's permission scope.
+- A running **Phoenix** container reachable at `VITE_PHOENIX_URL` (default `http://localhost:6006`).
+- `OTEL_ENABLED=true` so the chat pipeline opens a real `chat.llm` span (otherwise the noop adapter yields
+  no span id and feedback controls won't render — itself worth confirming).
+
+### What to verify
+1. **Search explorer.** On `/search`, run a query at limit 5/10/20: results show the **fusion** method and
+   **reranked / not reranked** chip, the chunk count, and scored chunks (rank, doc id, score, text). An
+   out-of-scope query returns "no chunks matched within your permission scope."
+2. **Feedback span_id.** In chat, send a **fresh** (non-cached) message; once the answer finishes, 👍/👎
+   appear under it. (Confirm the `event: meta` frame arrives in the network panel before the first token.)
+3. **Feedback round-trip.** Click 👍 (then a different message's 👎): `POST /feedback` returns 200 and the
+   annotation shows up on that turn's span in Phoenix (`annotator=HUMAN`, label `thumbs_up`/`thumbs_down`).
+4. **Monochrome emoji.** The 👍/👎 glyphs render in the **text color** (not the OS color palette) in both
+   `dark` and `typer` themes.
+5. **Cache hit = no feedback.** Re-send the identical single-turn query (served from cache): the reply has
+   **no** feedback controls (no fresh span id), as designed.
+6. **Phoenix launcher gating.** With an `obs:admin` token, `/observability` shows "Open Phoenix ↗" opening
+   `VITE_PHOENIX_URL` in a new tab; with a token lacking `obs:admin`, it shows the "you lack obs:admin" note.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:

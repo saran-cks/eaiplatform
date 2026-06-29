@@ -19,7 +19,7 @@ import asyncio
 import hashlib
 import logging
 import random
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -169,10 +169,16 @@ class SendChatMessageUseCase:
         query: str,
         scope: PermissionScope,
         history: list[Message],
+        on_span: Callable[[str], None] | None = None,
     ) -> AsyncIterator[str]:
         """Async generator that yields SSE token deltas then persists the turn.
 
         Callers MUST consume the entire iterator to ensure Turn persistence.
+
+        ``on_span``, if given, is invoked once with the LLM span id as soon as the
+        LLM span opens (before the first token). The HTTP layer uses it to surface
+        the span on the stream so the client can attach human feedback to the turn.
+        Cache hits and guard refusals open no LLM span, so it is not called.
         """
         sid = session.session_id
         base_attrs: dict[str, object] = {
@@ -243,7 +249,11 @@ class SendChatMessageUseCase:
                 try:
                     await self._store.append_turn(turn)
                 except Exception as exc:
-                    logger.error("Turn persistence failed for session %s on cache hit: %s", session.session_id, exc)
+                    logger.error(
+                        "Turn persistence failed for session %s on cache hit: %s",
+                        session.session_id,
+                        exc,
+                    )
 
                 await self._cache.evict(f"session:{session.session_id}:history")
                 yield cached_response
@@ -312,6 +322,8 @@ class SendChatMessageUseCase:
         ) as lspan:
             if lspan is not None:
                 llm_span_id = lspan.span_id
+                if llm_span_id and on_span is not None:
+                    on_span(llm_span_id)
             try:
                 async for token in self._llm.stream(
                     messages=all_messages,

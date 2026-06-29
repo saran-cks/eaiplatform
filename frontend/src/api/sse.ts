@@ -88,11 +88,17 @@ async function openStream(
 // ---------------------------------------------------------------------------
 // Chat: bare-token stream
 // ---------------------------------------------------------------------------
+/** Sidecar metadata on the chat stream (`event: meta`) — carries the turn's span id. */
+export interface ChatMeta {
+  span_id?: string;
+}
+
 export interface ChatStreamOptions extends BaseStreamOptions {
   sessionId: string;
   query: string;
   title?: string;
   onToken: (token: string) => void;
+  onMeta?: (meta: ChatMeta) => void;
   onDone?: () => void;
 }
 
@@ -101,6 +107,7 @@ export async function streamChat({
   query,
   title,
   onToken,
+  onMeta,
   onDone,
   onError,
   signal,
@@ -115,6 +122,14 @@ export async function streamChat({
       onMessage(event, data) {
         if (event === "error") {
           throw new FatalStreamError(data || "chat stream error");
+        }
+        if (event === "meta") {
+          try {
+            onMeta?.(JSON.parse(data) as ChatMeta);
+          } catch {
+            // ignore malformed meta — it never affects the token stream
+          }
+          return;
         }
         if (data === DONE_SENTINEL) {
           doneSeen = true;
