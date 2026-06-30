@@ -339,3 +339,48 @@ the parts that need live services (Core API + Qdrant + Phoenix).
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:
+
+---
+
+## ST-CP: Control plane — the four standard infra containers, no sidecars — added 2026-06-30 — **PASS (2026-06-30)**
+
+The only live check runnable **without the custom sidecars (`model_server`, `guard_gateway`) and
+without Bedrock**: bring up just the four stock data-plane images and confirm each is reachable on
+its published surface. Everything on the data/LLM plane (chat, agent, ingestion, retrieval) stays
+PENDING until the embedding sidecar + Bedrock creds + ingested data are available — this isolates
+**infra connectivity** from those.
+
+### Prereqs
+- Docker running; `.env` present with `POSTGRES_DB/USER/PASSWORD` (compose interpolates them).
+- No sidecar images or weights required.
+
+### Steps
+1. Bring up **only** the four — naming them explicitly skips `core_api` (which `depends_on` the two
+   sidecars `service_healthy`) and the sidecars themselves:
+   ```bash
+   docker compose up -d postgres valkey qdrant phoenix
+   ```
+2. Connectivity (postgres has **no published host port** — test it via `exec`; the rest publish ports):
+   ```bash
+   docker compose exec -T postgres pg_isready -U core -d core        # → accepting connections
+   docker compose exec -T valkey   valkey-cli ping                   # → PONG
+   curl -fsS http://localhost:6333/readyz                            # qdrant → 200
+   curl -fsS http://localhost:6333/collections                       # qdrant → 200
+   curl -fsS http://localhost:6006/healthz                           # phoenix → 200
+   ```
+   (On Windows/PowerShell use `Invoke-WebRequest <url> -UseBasicParsing` for the HTTP checks.)
+3. Tear down when done: `docker compose stop postgres valkey qdrant phoenix` (keep volumes) or
+   `docker compose down` (drop containers; named volumes persist).
+
+### Known wrinkle
+- **Qdrant's compose healthcheck uses `curl`, absent in `qdrant/qdrant:v1.18.0`**, so the container
+  can sit at `health: starting` indefinitely even while fully serving. Trust the direct `/readyz`
+  200 over the compose health column (the build-plan note at Session 1 already flags switching that
+  `depends_on` to `service_started`).
+
+### Record outcome here
+- [x] Run on 2026-06-30 by Claude (Opus 4.8) — **PASS**. All four started from cached images (no pull).
+  postgres `accepting connections`; valkey `PONG` + host TCP :6379 reachable; qdrant `/readyz` 200 +
+  `/collections` 200; phoenix `/healthz` 200. postgres/valkey reported `healthy`; qdrant/phoenix stayed
+  `health: starting` due to the missing-`curl` healthcheck above, but both served HTTP 200 directly.
+  Sidecars and `core_api` intentionally not started.

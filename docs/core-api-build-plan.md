@@ -91,8 +91,15 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 - [x] **Vendor-neutral `ObservabilityPort` (DD-17)** — Langfuse swap = new adapter + DI rebind; producers (MCP connector, chat pipeline, agent runner) instrumented through the port, fail-soft.
 - [ ] Live Phoenix verification (UI render, Sessions, evals, drift, auto-instrument) — **smoke-tests ST-4 (PENDING)**.
 
-### Session 9 — Step 12: dashboard
+### Session 9 — Step 12: dashboard — **DEFERRED (logic not yet designed; build when live)**
 - [ ] `api/routes/dashboard.py` (SSE drilldown, rate-limited) + schema
+- **Scope (2026-06-30):** this is a *custom* project dashboard fed by an **unsupervised-ML +
+  LLM-induced pipeline** — surfacing application/project status, tickets, recent issues, and
+  similar derived signals. The aggregation/ML/LLM logic that feeds it is **not designed yet**, and
+  the surface only has meaning against live data. **Set aside until deployment**: build the route +
+  schema together with the pipeline when the platform is live, not as a stand-alone skeleton.
+- **Cross-cut:** this is the sole blocker for **frontend F5 (dashboard surface)** — F5 waits on it
+  by design (see `docs/frontend-build-plan.md`).
 
 ### Session 10 — Steps 13–14: tests + logging
 - [x] `tests/unit` + RAG-security suite (104 tests: guard, chat-security, PDP, trajectory, MCP, observability, contract, auth, logging)
@@ -100,6 +107,12 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 
 ### Deferred queue/llm backends (any time)
 - [ ] `adapters/queue/arq.py` (active) + `sqs.py` FUTURE stub
+  - **Hold rationale (2026-06-30):** `QueuePort` + the `Job` entity exist, but **nothing calls
+    `container.queue()`** yet — there is no ingestion-trigger route enqueuing jobs, so the DI bind
+    intentionally raises `AdapterNotWired`. arq runs **on the Valkey we already operate**
+    (`settings.valkey_url`) — it *is* the "use Valkey for queuing" option; SQS stays the FUTURE
+    cloud swap. Build the arq adapter **together with the ingestion-trigger route that needs it**,
+    not before — otherwise it's an adapter with no consumer.
 - [ ] FUTURE: E2B sandbox exec, CLI transport, MCP write actions
 
 ---
