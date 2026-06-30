@@ -100,8 +100,16 @@ class IngestionPipeline:
                 )
                 for c, e in zip(plan.to_upsert, embeddings, strict=True)
             ]
-            # Vectors first, then registry. chunk_id idempotency makes a retry after a
-            # mid-write failure safe; a durable outbox/reconciliation is Phase-3 work.
+            # Order is load-bearing (DD-20): Qdrant — the retrieval index core-api reads —
+            # is written FIRST, the registry (our dedup bookkeeping) SECOND, so the registry
+            # can only ever LAG Qdrant, never lead it. A crash between the two leaves chunks
+            # in Qdrant the registry doesn't yet track; the next ingest's diff() re-upserts
+            # them (idempotent by chunk_id) → self-healing re-work, never a silent retrieval
+            # gap. The dangerous inverse (registry ahead → diff() skips a chunk that isn't
+            # actually in Qdrant) is structurally excluded by this order. Residual: a partial
+            # write to a doc that is NEVER re-ingested can leave Qdrant points a
+            # registry-driven purge misses (deletion-completeness) — the real case for the
+            # durable outbox/reconciliation (DD-20, Phase-3).
             await self._sink.upsert(embedded)
             await self._registry.record_chunks(
                 [

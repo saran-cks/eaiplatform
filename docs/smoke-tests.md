@@ -91,9 +91,15 @@ system. Run this once the real adapters land (Phase 3/4).
 3. **Both guards at ingest.** A doc with an injection payload → chunk stored with high
    `injection_risk`, `screened=true` (stamped, NOT dropped). A genuinely abusive doc →
    quarantined. A doc with PII (email/SSN) → stored text redacted.
-4. **Idempotency / delta against real Postgres + Qdrant.** Re-ingest unchanged corpus →
+4. **Idempotency / delta against real Postgres + Qdrant (DD-20).** Re-ingest unchanged corpus →
    zero upserts (all unchanged). Delete a record at source → its chunks tombstoned out of
-   Qdrant. Kill the worker mid dual-write, restart → no duplicate points, registry consistent.
+   Qdrant. Kill the worker mid dual-write (after the Qdrant upsert, before the registry write),
+   restart and re-ingest the same doc → no duplicate points, registry consistent (the lagging
+   registry self-heals via `diff()`). **Deletion-completeness:** simulate the never-re-ingested
+   orphan — inject a chunk into Qdrant whose `chunk_id` the registry doesn't track, then run a
+   registry-driven purge of that tenant/doc → confirm the orphan is currently **missed** (this
+   is the gap the Phase-3 outbox/reconciliation closes; record it as a known limitation, not a
+   pass, until the sweeper exists).
 5. **Worker-own bge-m3 dim == 1024** and matches the collection's dense vector size; sparse
    vectors present.
 

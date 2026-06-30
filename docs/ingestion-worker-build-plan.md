@@ -68,9 +68,13 @@ core — do it before connectors.
 | `EmbedderPort` | worker-own bge-m3 | model weights (FlagEmbedding/transformers), RAM | dense + sparse, batched (`INGEST_EMBED_BATCH`); dim **must == 1024** (collection contract). |
 | `StagingPort` | S3 immutable staging | **S3** (or minio); IAM | write-once raw + manifest for replay/audit. |
 
-**Dual-write hardening (Fork #4):** Qdrant + Postgres are not transactional. `chunk_id`
-idempotency makes retry safe, but add a **durable outbox / reconciliation** so a crash
-between the two writes self-heals (today the orchestrator notes this as a known gap).
+**Dual-write hardening (Fork #4 — see DD-20):** Qdrant + Postgres are not transactional.
+Today's mitigation is sound for *retrieval*: Qdrant is written first so the registry can only
+lag (self-healing re-work on the next ingest via `diff()`), and `chunk_id` idempotency makes
+retry a no-op. The remaining gap is **deletion-completeness**, not retrieval correctness — a
+partial write to a doc that's never re-ingested leaves Qdrant points a registry-driven purge
+(tenant offboarding / GDPR) would miss. The **durable outbox / reconciliation** (intent log +
+a sweeper that reconciles Qdrant against the registry) closes that orphan window. Phase-3.
 
 ### ⛔ Phase 4 — Connectors (incremental acquisition)
 `AcquisitionPort` adapters, each owning its own cursor/delta. **Blocking on live creds**;

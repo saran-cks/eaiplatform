@@ -81,3 +81,29 @@ path:
   changed-content→upsert, missing→tombstone.
 - **Verification**: `python -m pytest ingestion_worker/tests -q` → **23 passed** (was 10).
   Worker stays ruff-clean.
+
+---
+
+## Session 3: dual-write consistency — make the safety argument explicit (DD-20) — 2026-06-30
+**Target**: a Kleppmann-style review flagged the Qdrant+Postgres dual-write as a classic
+non-transactional anti-pattern (Qdrant ✓ / Postgres ✗ → out of sync). Assessed it, and the
+finding is that the existing shape is *already* safe for retrieval but the *reasoning* wasn't
+captured and the residual risk was mis-stated.
+**Steps Completed**:
+- Confirmed the consistency model: core-api reads **only Qdrant**; the Postgres registry is a
+  *derived* dedup index. Qdrant-first write-order means the registry can only **lag**, never
+  lead — a lagging registry self-heals on the next ingest via `diff()` (re-upsert is idempotent
+  by `chunk_id`); the dangerous inverse (registry leads → `diff()` skips a chunk absent from
+  Qdrant → silent retrieval loss) is **structurally excluded** by the order.
+- Tightened the orchestrator call-site comment from "vectors first, then registry; outbox is
+  Phase-3" to spell out the ordering invariant and the one residual risk.
+- Added **DD-20**: Qdrant = system of record, write-order = self-healing gap, and the durable
+  outbox's *primary* justification reframed as **deletion-completeness** (a partial write to a
+  doc never re-ingested leaves Qdrant points a registry-driven purge/GDPR erasure would miss),
+  not retrieval correctness. Updated build-plan Fork #4 to match and extended **ST-2** with the
+  never-re-ingested deletion-completeness check.
+**Issues Faced & Resolved**: none — docs/comment only; no code-path change, so the 23 tests are
+untouched. Deliberately did **not** build the outbox (correctly deferred Phase-3) nor reach for
+2PC across the two stores (no usable cross-store atomic commit; operationally heavy).
+**Verification**: `python -m pytest ingestion_worker/tests -q` → **23 passed** (unchanged);
+worker ruff-clean.
