@@ -5,9 +5,12 @@ client): it serializes ``SessionRiskState`` to JSON under a ``risk:{session_id}`
 TTL matching the agent-session window. This is what makes the trajectory monitor correct in a
 multi-worker deployment — risk accumulates in a shared backend, not per-process memory.
 
-Concurrency note (DD-16): load→modify→save is not atomic. Within one agent session tool calls
-are sequential (single worker at a time), so this is sufficient for the threat model; a Lua
-CAS / atomic-increment hardening is FUTURE for genuinely concurrent same-session writers.
+Concurrency note (DD-16): a single read-modify-write here is *not* atomic, and same-session
+tool calls are **not** serial — the agent runtime fans workers out in parallel within one
+session (``langgraph_runner`` Map-Reduce). Interleaving is prevented one level up, where it
+belongs: ``TrajectoryMonitor.observe_async`` holds a per-session lock across load→score→save.
+That covers the reachable (in-process) concurrency; a Valkey CAS / atomic-increment hardening
+is FUTURE for genuinely concurrent same-session writers spread across *processes*.
 """
 
 from __future__ import annotations

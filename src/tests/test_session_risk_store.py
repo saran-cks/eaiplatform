@@ -8,6 +8,8 @@ exception on the action path).
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from adapters.policy.session_risk_store import ValkeySessionRiskStore
@@ -49,6 +51,20 @@ class FailingCache(FakeCache):
 
     async def set(self, key: str, value: str, *, ttl: int | None = None) -> None:
         raise RuntimeError("valkey down")
+
+
+class YieldingCache(FakeCache):
+    """A CachePort double that hands control back to the loop on every get/set, so
+    coroutines awaiting it actually interleave — without this, gathered observe_async
+    calls would run to completion one-by-one and never exercise the read-modify-write race."""
+
+    async def get(self, key: str) -> str | None:
+        await asyncio.sleep(0)
+        return self.data.get(key)
+
+    async def set(self, key: str, value: str, *, ttl: int | None = None) -> None:
+        await asyncio.sleep(0)
+        self.data[key] = value
 
 
 def _write_prod() -> ActionEvent:
@@ -116,6 +132,52 @@ async def test_risk_accumulates_across_workers():
     # A different session on B starts clean (no cross-session bleed).
     v_other = await worker_b.observe_async("other", _write_prod())
     assert v_other.risk == pytest.approx(v1.risk)
+
+
+# --- concurrency: parallel same-session calls must not lose an update (DD-16) -------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_session_does_not_lose_updates():
+    """The agent runtime fans workers out in parallel within ONE session (langgraph_runner
+    Map-Reduce: code_worker + ticket_worker hit the same connector with the same session_id).
+    Two observe_async calls racing on one shared monitor + backend must accumulate BOTH
+    increments — last-writer-wins would silently under-count risk and weaken KILL detection.
+
+    The session is seeded first: the lost update happens on the *clobber* path
+    (``self._sessions[sid] = loaded``), which only runs once the store already holds a value —
+    from empty, the shared in-process dict masks the race and hides the bug."""
+    # Baseline: three events applied strictly sequentially on an identical setup.
+    seq = TrajectoryMonitor(store=ValkeySessionRiskStore(YieldingCache(), ttl=60))
+    for _ in range(3):
+        v_seq = await seq.observe_async("s", _write_prod())
+
+    # Same three events: one to seed (so the store is non-empty), then two racing.
+    monitor = TrajectoryMonitor(store=ValkeySessionRiskStore(YieldingCache(), ttl=60))
+    await monitor.observe_async("s", _write_prod())
+    v1, v2 = await asyncio.gather(
+        monitor.observe_async("s", _write_prod()),
+        monitor.observe_async("s", _write_prod()),
+    )
+
+    # The later writer sees the earlier one's contribution → totals match the sequential run.
+    assert max(v1.risk, v2.risk) == pytest.approx(v_seq.risk)
+    assert monitor.risk("s") == pytest.approx(v_seq.risk)
+
+
+@pytest.mark.asyncio
+async def test_distinct_sessions_do_not_serialize():
+    """The lock is per-session: two different sessions run concurrently without blocking
+    each other, and never cross-contaminate risk."""
+    monitor = TrajectoryMonitor(store=ValkeySessionRiskStore(YieldingCache(), ttl=60))
+
+    va, vb = await asyncio.gather(
+        monitor.observe_async("a", _write_prod()),
+        monitor.observe_async("b", _write_prod()),
+    )
+
+    assert va.risk == pytest.approx(vb.risk)  # each is a clean single-event session
+    assert monitor.risk("a") == pytest.approx(va.risk)
 
 
 # --- fail-soft: a backend outage never breaks the action path -----------------------

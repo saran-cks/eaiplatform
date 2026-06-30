@@ -12,10 +12,20 @@ Session state is in-process by default; injecting a ``SessionRiskStorePort`` mak
 ``observe_async`` hydrate/persist ``SessionRiskState`` from a shared backend (Valkey) so
 risk accumulates across workers and survives restarts. The sync ``observe`` is unchanged
 (scoring is the same); persistence is layered on top, fail-soft.
+
+Concurrency (DD-16): the agent runtime fans workers out *in parallel within one session*
+(``langgraph_runner`` Map-Reduce — ``code_worker`` and ``ticket_worker`` both call the same
+connector with the same ``session_id``). The store path makes load→score→save span ``await``
+points, so two such calls could interleave and lose an increment — and a lost update always
+*under-counts* risk, the one direction that weakens KILL/REQUIRE_APPROVAL detection. The whole
+read-modify-write therefore runs under a **per-session lock**. A single agent session's SSE run
+is owned by one worker, so a per-process lock covers the reachable concurrency; genuinely
+concurrent same-session writers *across* processes would need a Valkey CAS (FUTURE).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -50,6 +60,16 @@ class TrajectoryMonitor:
         self._t = thresholds or RiskThresholds()
         self._store = store
         self._sessions: dict[str, SessionRiskState] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _lock_for(self, session_id: str) -> asyncio.Lock:
+        """Per-session lock, created lazily. Safe to create on the event loop: ``get``
+        then ``set`` has no ``await`` between, so two coroutines can't both miss."""
+        lock = self._locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[session_id] = lock
+        return lock
 
     def observe(self, session_id: str, event: ActionEvent) -> TrajectoryVerdict:
         """Synchronous, in-process scoring + accumulation (no persistence)."""
@@ -61,12 +81,17 @@ class TrajectoryMonitor:
         )
 
     async def observe_async(self, session_id: str, event: ActionEvent) -> TrajectoryVerdict:
-        """Persistence-aware observe: hydrate from the store, score, write back.
+        """Persistence-aware observe: hydrate from the store, score, write back — atomically.
 
-        Fail-soft — a store outage degrades to pure in-process accumulation (a weaker DD-11,
-        but never a broken action path). Without a store this is just ``observe``.
+        Without a store this is just ``observe`` (the sync path is already non-interleaving).
+        With a store the whole load→score→save runs under the per-session lock so concurrent
+        tool calls in one session can't lose an increment (DD-16). Fail-soft — a store outage
+        degrades to pure in-process accumulation (a weaker DD-11, never a broken action path).
         """
-        if self._store is not None:
+        if self._store is None:
+            return self.observe(session_id, event)
+
+        async with self._lock_for(session_id):
             try:
                 loaded = await self._store.load(session_id)
                 if loaded is not None:
@@ -74,9 +99,8 @@ class TrajectoryMonitor:
             except Exception as exc:  # backend down → fall back to in-process state
                 logger.warning("SessionRiskStore.load failed (%s); in-memory: %s", session_id, exc)
 
-        verdict = self.observe(session_id, event)
+            verdict = self.observe(session_id, event)
 
-        if self._store is not None:
             try:
                 await self._store.save(session_id, self._sessions[session_id])
             except Exception as exc:
@@ -91,10 +115,12 @@ class TrajectoryMonitor:
     def reset(self, session_id: str) -> None:
         """Clear in-process state on session end (called by the runtime / agent_reaper)."""
         self._sessions.pop(session_id, None)
+        self._locks.pop(session_id, None)
 
     async def forget(self, session_id: str) -> None:
         """Clear both in-process and persisted state (session ended / killed)."""
         self._sessions.pop(session_id, None)
+        self._locks.pop(session_id, None)
         if self._store is not None:
             try:
                 await self._store.delete(session_id)
