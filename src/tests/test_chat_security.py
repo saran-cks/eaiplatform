@@ -252,3 +252,66 @@ async def test_retrieval_failure_fails_closed():
         ):
             pass
 
+
+def _cache_hit_use_case() -> tuple[SendChatMessageUseCase, AsyncMock]:
+    """A use case whose cache always hits, so execute() takes the persist-and-return path
+    without needing an LLM stream mock. Returns (use_case, store) for assertions."""
+    store = AsyncMock()
+    cache = AsyncMock()
+    cache.get.return_value = "Cached answer"
+    use_case = SendChatMessageUseCase(
+        store=store,
+        cache=cache,
+        retriever=AsyncMock(),
+        llm=AsyncMock(),
+        guard=_benign_guard(),
+        retrieval_top_k=5,
+        cache_response_ttl=3600,
+    )
+    return use_case, store
+
+
+async def _run_once(use_case: SendChatMessageUseCase, **kwargs) -> None:
+    session = Session(session_id="session-1", tenant_id="tenant-1")
+    scope = PermissionScope(tenant_id="tenant-1", permissions=frozenset(["read"]))
+    async for _ in use_case.execute(
+        session=session, query="Hello", scope=scope, history=[], **kwargs
+    ):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_client_message_id_makes_persisted_ids_stable_across_retry():
+    """DD-21: a client-supplied message_id is the end-to-end idempotency key — a retried
+    submission must persist the SAME message/turn ids so the store's ON CONFLICT dedups
+    instead of inserting a duplicate turn. All three ids derive from the one client id."""
+    use_case, store = _cache_hit_use_case()
+
+    await _run_once(use_case, client_message_id="cm-123")
+    await _run_once(use_case, client_message_id="cm-123")  # the retry
+
+    turns: list[Turn] = [c[0][0] for c in store.append_turn.call_args_list]
+    assert len(turns) == 2
+    # Stable across the retry → collides on the existing primary keys.
+    assert turns[0].turn_id == turns[1].turn_id == "cm-123:t"
+    assert turns[0].user_message.message_id == turns[1].user_message.message_id == "cm-123"
+    assert (
+        turns[0].assistant_message.message_id
+        == turns[1].assistant_message.message_id
+        == "cm-123:a"
+    )
+
+
+@pytest.mark.asyncio
+async def test_without_client_message_id_ids_differ_per_request():
+    """Fallback behavior is explicit: with no client key each request mints a fresh uuid4,
+    so a retry is NOT deduped (the documented at-least-once behavior the key opts out of)."""
+    use_case, store = _cache_hit_use_case()
+
+    await _run_once(use_case)
+    await _run_once(use_case)
+
+    turns: list[Turn] = [c[0][0] for c in store.append_turn.call_args_list]
+    assert turns[0].turn_id != turns[1].turn_id
+    assert turns[0].user_message.message_id != turns[1].user_message.message_id
+

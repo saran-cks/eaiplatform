@@ -221,6 +221,7 @@ async def send_message(
                 query=body.query,
                 scope=scope,
                 history=history,
+                client_message_id=body.message_id,
                 on_span=lambda sid: span_box.__setitem__("span_id", sid),
             ):
                 if not meta_sent and "span_id" in span_box:

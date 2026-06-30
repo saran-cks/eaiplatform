@@ -23,6 +23,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from core.domain.entities.message import Message, Role, Turn
 from core.domain.entities.session import Session
@@ -169,6 +170,7 @@ class SendChatMessageUseCase:
         query: str,
         scope: PermissionScope,
         history: list[Message],
+        client_message_id: str | None = None,
         on_span: Callable[[str], None] | None = None,
     ) -> AsyncIterator[str]:
         """Async generator that yields SSE token deltas then persists the turn.
@@ -220,6 +222,17 @@ class SendChatMessageUseCase:
         is_single_turn = len(history) == 0
         cache_key = _build_cache_key(query, scope.tenant_id, scope.permissions)
 
+        # Idempotency key (DD-21): persistence dedups on these ids via ON CONFLICT, but that
+        # only suppresses duplicates if the id is STABLE across a retry. A client-supplied
+        # ``message_id`` (reused on a double-submit / proxy retry / SSE reconnect-and-resend)
+        # makes the user message, assistant message, and turn collide on the existing keys
+        # instead of inserting a second turn. With no client id we mint a fresh uuid4 — the
+        # prior at-least-once behavior, where a retry DOES duplicate. All three ids derive
+        # from the one resolved id so a single retry collides on every persisted row.
+        user_msg_id = client_message_id or str(uuid4())
+        assistant_msg_id = f"{user_msg_id}:a"
+        turn_id = f"{user_msg_id}:t"
+
         # --- step 1: cache probe (restricted to single-turn to preserve context) ---
         if is_single_turn:
             cached_response = await self._cache.get(cache_key)
@@ -228,18 +241,21 @@ class SendChatMessageUseCase:
                 
                 # Persist turn on cache hit to prevent history holes
                 user_message = Message(
+                    message_id=user_msg_id,
                     session_id=session.session_id,
                     role=Role.USER,
                     content=query,
                     created_at=datetime.now(tz=UTC),
                 )
                 assistant_message = Message(
+                    message_id=assistant_msg_id,
                     session_id=session.session_id,
                     role=Role.ASSISTANT,
                     content=cached_response,
                     created_at=datetime.now(tz=UTC),
                 )
                 turn = Turn(
+                    turn_id=turn_id,
                     session_id=session.session_id,
                     user_message=user_message,
                     assistant_message=assistant_message,
@@ -301,6 +317,7 @@ class SendChatMessageUseCase:
 
         # Build the messages list: history + current user message
         user_message = Message(
+            message_id=user_msg_id,
             session_id=session.session_id,
             role=Role.USER,
             content=query,
@@ -343,6 +360,7 @@ class SendChatMessageUseCase:
         assistant_text = "".join(collected_tokens)
 
         assistant_message = Message(
+            message_id=assistant_msg_id,
             session_id=session.session_id,
             role=Role.ASSISTANT,
             content=assistant_text,
@@ -351,6 +369,7 @@ class SendChatMessageUseCase:
 
         # --- step 7: persist turn ---
         turn = Turn(
+            turn_id=turn_id,
             session_id=session.session_id,
             user_message=user_message,
             assistant_message=assistant_message,
