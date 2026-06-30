@@ -77,6 +77,8 @@ testpaths = ["src/tests"]
 line-length = 100
 target-version = "py312"
 src = ["src"]
+# Generated protobuf stubs are emitted by protoc and must not be hand-edited/linted.
+extend-exclude = ["*_pb2.py", "*_pb2_grpc.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]

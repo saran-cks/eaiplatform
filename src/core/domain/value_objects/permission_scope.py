@@ -42,7 +42,9 @@ class PermissionScope:
         if not isinstance(tenant, str) or not tenant:
             raise PermissionDenied("JWT missing required 'tenant_id' claim")
         raw = claims.get("permissions", [])
-        perms = frozenset(str(p) for p in raw) if isinstance(raw, (list, tuple, set)) else frozenset()
+        perms = (
+            frozenset(str(p) for p in raw) if isinstance(raw, (list, tuple, set)) else frozenset()
+        )
         sub = claims.get("sub")
         return cls(
             tenant_id=tenant,

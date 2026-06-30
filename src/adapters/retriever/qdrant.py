@@ -49,7 +49,9 @@ class QdrantRetrieverAdapter(RetrieverPort):
         
         self._bootstrapped = False
         self._bootstrap_lock = asyncio.Lock()
-        logger.info("QdrantRetrieverAdapter initialized pointing to collection: %s", self._collection)
+        logger.info(
+            "QdrantRetrieverAdapter initialized pointing to collection: %s", self._collection
+        )
 
     async def _bootstrap_collection(self) -> None:
         """Create the collection with dense and sparse index settings if missing."""
@@ -61,7 +63,10 @@ class QdrantRetrieverAdapter(RetrieverPort):
             try:
                 exists = await self._client.collection_exists(self._collection)
                 if not exists:
-                    logger.info("Collection '%s' not found. Bootstrapping collection schema...", self._collection)
+                    logger.info(
+                        "Collection '%s' not found. Bootstrapping collection schema...",
+                        self._collection,
+                    )
                     await self._client.create_collection(
                         collection_name=self._collection,
                         vectors_config={
@@ -130,8 +135,9 @@ class QdrantRetrieverAdapter(RetrieverPort):
             )
         ]
 
-        # Permissions constraint: document must have at least one allowed role matching user permissions, or be tagged as public
-        allowed_perms = list(scope.permissions) + ["public"]
+        # Permissions constraint: document must have at least one allowed role matching
+        # user permissions, or be tagged as public
+        allowed_perms = [*scope.permissions, "public"]
         must_conditions.append(
             models.FieldCondition(
                 key="permissions",
@@ -235,5 +241,6 @@ class QdrantRetrieverAdapter(RetrieverPort):
         """Close client sessions on shutdown."""
         await self._embed_client.close()
         # AsyncQdrantClient closes automatically but close() can be called if needed
-        # (qdrant AsyncQdrantClient doesn't strictly have close in older versions, but in recent versions it handles connection shutdown nicely)
+        # (qdrant AsyncQdrantClient doesn't strictly have close in older versions, but in
+        # recent versions it handles connection shutdown nicely)
         logger.info("QdrantRetrieverAdapter closed.")

@@ -10,6 +10,7 @@ import json
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 import asyncpg
 
@@ -20,6 +21,11 @@ from core.domain.entities.session import AgentSession, AgentStatus, Session, Ses
 from core.ports.store import StorePort
 
 logger = logging.getLogger(__name__)
+
+
+def _maybe_json(value: Any) -> Any:
+    """Decode a JSONB column: asyncpg returns it as a str or an already-decoded object."""
+    return json.loads(value) if isinstance(value, str) else value
 
 
 class PostgresAdapter(StorePort):
@@ -36,7 +42,9 @@ class PostgresAdapter(StorePort):
             return self._pool
         async with self._pool_lock:
             if self._pool is None:
-                logger.info("Initializing asyncpg connection pool to: %s", self._settings.postgres_host)
+                logger.info(
+                    "Initializing asyncpg connection pool to: %s", self._settings.postgres_host
+                )
                 self._pool = await asyncpg.create_pool(
                     self._dsn,
                     min_size=self._settings.postgres_pool_min,
@@ -122,7 +130,8 @@ class PostgresAdapter(StorePort):
         -- Artifacts table (Monaco generated code/files)
         CREATE TABLE IF NOT EXISTS artifacts (
             file_id TEXT PRIMARY KEY,
-            agent_session_id TEXT NOT NULL REFERENCES agent_sessions(agent_session_id) ON DELETE CASCADE,
+            agent_session_id TEXT NOT NULL
+                REFERENCES agent_sessions(agent_session_id) ON DELETE CASCADE,
             tenant_id TEXT NOT NULL,
             name TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -147,7 +156,9 @@ class PostgresAdapter(StorePort):
     # --- chat sessions ---
     async def create_session(self, session: Session) -> Session:
         query = """
-            INSERT INTO sessions (session_id, tenant_id, subject_id, title, status, metadata, created_at, updated_at)
+            INSERT INTO sessions (
+                session_id, tenant_id, subject_id, title, status, metadata, created_at, updated_at
+            )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (session_id) DO UPDATE SET
                 title = EXCLUDED.title,
@@ -180,7 +191,8 @@ class PostgresAdapter(StorePort):
 
     async def get_session(self, *, session_id: str, tenant_id: str) -> Session | None:
         query = """
-            SELECT session_id, tenant_id, subject_id, title, status, metadata, created_at, updated_at
+            SELECT session_id, tenant_id, subject_id, title, status, metadata,
+                   created_at, updated_at
             FROM sessions
             WHERE session_id = $1 AND tenant_id = $2
         """
@@ -189,7 +201,7 @@ class PostgresAdapter(StorePort):
             row = await conn.fetchrow(query, session_id, tenant_id)
             if not row:
                 return None
-            meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            meta = _maybe_json(row["metadata"])
             return Session(
                 session_id=row["session_id"],
                 tenant_id=row["tenant_id"],
@@ -206,7 +218,8 @@ class PostgresAdapter(StorePort):
     ) -> list[Session]:
         if subject_id is not None:
             query = """
-                SELECT session_id, tenant_id, subject_id, title, status, metadata, created_at, updated_at
+                SELECT session_id, tenant_id, subject_id, title, status, metadata,
+                       created_at, updated_at
                 FROM sessions
                 WHERE tenant_id = $1 AND subject_id = $2
                 ORDER BY updated_at DESC
@@ -215,7 +228,8 @@ class PostgresAdapter(StorePort):
             args = (tenant_id, subject_id, limit)
         else:
             query = """
-                SELECT session_id, tenant_id, subject_id, title, status, metadata, created_at, updated_at
+                SELECT session_id, tenant_id, subject_id, title, status, metadata,
+                       created_at, updated_at
                 FROM sessions
                 WHERE tenant_id = $1
                 ORDER BY updated_at DESC
@@ -228,7 +242,7 @@ class PostgresAdapter(StorePort):
             rows = await conn.fetch(query, *args)
             sessions = []
             for row in rows:
-                meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                meta = _maybe_json(row["metadata"])
                 sessions.append(
                     Session(
                         session_id=row["session_id"],
@@ -314,7 +328,10 @@ class PostgresAdapter(StorePort):
                 chunks_json = json.dumps(chunks_data)
 
                 turn_query = """
-                    INSERT INTO turns (turn_id, session_id, user_message_id, assistant_message_id, retrieved_chunks, created_at)
+                    INSERT INTO turns (
+                        turn_id, session_id, user_message_id, assistant_message_id,
+                        retrieved_chunks, created_at
+                    )
                     VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (turn_id) DO UPDATE SET
                         assistant_message_id = EXCLUDED.assistant_message_id,
@@ -351,7 +368,7 @@ class PostgresAdapter(StorePort):
             rows = await conn.fetch(query, session_id, tenant_id, limit)
             messages = []
             for row in rows:
-                meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                meta = _maybe_json(row["metadata"])
                 messages.append(
                     Message(
                         message_id=row["message_id"],
@@ -419,8 +436,8 @@ class PostgresAdapter(StorePort):
             if not row:
                 return None
 
-            peers = json.loads(row["a2a_peers"]) if isinstance(row["a2a_peers"], str) else row["a2a_peers"]
-            meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            peers = _maybe_json(row["a2a_peers"])
+            meta = _maybe_json(row["metadata"])
 
             return AgentSession(
                 agent_session_id=row["agent_session_id"],
@@ -440,7 +457,9 @@ class PostgresAdapter(StorePort):
         self, *, agent_session_id: str, status: AgentStatus
     ) -> None:
         ended_at = None
-        if status in (AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.ZOMBIE, AgentStatus.INTERRUPTED):
+        if status in (
+            AgentStatus.COMPLETED, AgentStatus.FAILED, AgentStatus.ZOMBIE, AgentStatus.INTERRUPTED
+        ):
             ended_at = datetime.now(UTC)
             query = """
                 UPDATE agent_sessions
@@ -472,8 +491,8 @@ class PostgresAdapter(StorePort):
             rows = await conn.fetch(query)
             sessions = []
             for row in rows:
-                peers = json.loads(row["a2a_peers"]) if isinstance(row["a2a_peers"], str) else row["a2a_peers"]
-                meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+                peers = _maybe_json(row["a2a_peers"])
+                meta = _maybe_json(row["metadata"])
                 sessions.append(
                     AgentSession(
                         agent_session_id=row["agent_session_id"],
@@ -505,8 +524,8 @@ class PostgresAdapter(StorePort):
             if not row:
                 return None
 
-            perms = json.loads(row["permissions"]) if isinstance(row["permissions"], str) else row["permissions"]
-            meta = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            perms = _maybe_json(row["permissions"])
+            meta = _maybe_json(row["metadata"])
 
             source = Source(
                 source_id=row["document_id"],

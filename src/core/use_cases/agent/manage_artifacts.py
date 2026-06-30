@@ -19,7 +19,9 @@ class ManageArtifactsUseCase:
     def __init__(self, store: StorePort) -> None:
         self._store = store
 
-    async def list_artifacts(self, *, agent_session_id: str, tenant_id: str) -> list[dict[str, Any]]:
+    async def list_artifacts(
+        self, *, agent_session_id: str, tenant_id: str
+    ) -> list[dict[str, Any]]:
         """List metadata references for files generated within an agent session."""
         rows = await self._store.list_artifacts(
             agent_session_id=agent_session_id,

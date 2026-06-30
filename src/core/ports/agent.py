@@ -26,7 +26,8 @@ class AgentPort(Protocol):
         """Run the ReAct loop; yields step events for SSE.
         
         Yielded events are dictionary mappings containing at least:
-          - "event": One of "thought", "worker_start", "worker_done", "synthesis", "output", "error", "done".
+          - "event": One of "thought", "worker_start", "worker_done", "synthesis",
+            "output", "error", "done".
           - "data": The data payload mapping.
         """
         ...
