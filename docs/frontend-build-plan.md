@@ -19,7 +19,8 @@ the API's static mount. See **DD-19** for why SPA-not-SSR and the full rationale
 > `event: meta` line (core-api Session 19). This session also reworked the conversation surface per request —
 > assistant turns are unboxed/unlabelled, the user bubble is a borderless radial fade, long lines wrap, the
 > agent `ActionStream` streams on a single line above the composer, and send is a circular `>>` button.
-> **Remaining F3 item:** the Monaco `ArtifactViewer` (deferred — heavy dep). Agent mode still runs on the
+> **F3 now fully closed (Session F5a, 2026-06-30):** the Monaco `ArtifactViewer` landed — read-only,
+> self-hosted (no CDN), lazy-loaded, with a mock seam for local demo. Agent mode still runs on the
 > **mock stream** (`VITE_MOCK_AGENT`, on by default) for demos. Visual design is **locked** (below). See
 > `docs/frontend-dev-log.md` for the F1–F4 records and the intentional deviations.
 
@@ -153,9 +154,10 @@ frontend/
 - [x] Stream `output` tokens into the answer; terminal `done` handling; per-message `error` state.
 - [x] Interrupt: the **stop** button aborts the stream and (real runs only, not mock) fires
       `POST /agent/{id}/interrupt` server-side; disconnect-cancel on unmount.
-- [ ] **Monaco editor** (`ArtifactViewer`) for artifacts (`GET /agent/{id}/artifacts`,
-      `/artifacts/{file_id}`) — **deferred** (skipped the heavy `@monaco-editor/react` install in the quick
-      pass); the one remaining F3 bullet.
+- [x] **Monaco editor** (`ArtifactViewer`) for artifacts (`GET /agent/{id}/artifacts`,
+      `/artifacts/{file_id}`) — **DONE (2026-06-30, Session F5a)**. Read-only right-docked drawer; self-hosted
+      Monaco (no CDN) + single editor worker; lazy-loaded (own chunk); mock seam (`env.mockAgent`) for local
+      demo; `⌗ artifacts` affordance after an agent run. Live click-through = ST-F3 item 6.
 - [ ] (Future) approval/PDP-prompt handling when the backend surfaces require-approval events.
 
 > **FUTURE EXTENSION — chat-mode action ticker.** Reusing `ActionStream` for chat (`searching / found /

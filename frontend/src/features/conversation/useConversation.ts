@@ -5,12 +5,13 @@ import { apiUrl, authHeader } from "@/api/client";
 import { getHistory, listSessions, search, type SearchResponse } from "@/api/endpoints";
 import { mockAgentStream } from "@/api/mockAgent";
 import { streamAgent, streamChat, type AgentEvent } from "@/api/sse";
+import { env } from "@/lib/env";
 import { queryKeys } from "@/lib/queryKeys";
 
 import type { Mode } from "./Composer";
 
 // Agent backend isn't runnable locally yet — mock unless explicitly disabled.
-const MOCK_AGENT = (import.meta.env.VITE_MOCK_AGENT ?? "1") !== "0";
+const MOCK_AGENT = env.mockAgent;
 
 /**
  * Owns the whole chat-mode conversation: the session list, the active session's
@@ -64,6 +65,9 @@ export function useConversation() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [sources, setSources] = useState<SourcesState>({ status: "idle" });
   const [actionSteps, setActionSteps] = useState<ActionStep[]>([]);
+  // The session id of the most recent agent run in this conversation — gates the
+  // ArtifactViewer affordance (artifacts are an agent-only output).
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const agentRunRef = useRef<{ sessionId: string } | null>(null);
@@ -106,6 +110,7 @@ export function useConversation() {
     setMessages([]);
     setSources({ status: "idle" });
     setActionSteps([]);
+    setAgentSessionId(null);
   }, [abort]);
 
   const selectSession = useCallback(
@@ -117,6 +122,7 @@ export function useConversation() {
       setMessages([]);
       setSources({ status: "idle" });
       setActionSteps([]);
+      setAgentSessionId(null);
       setLoadingHistory(true);
       try {
         const history = await getHistory(id);
@@ -254,6 +260,7 @@ export function useConversation() {
       try {
         if (mode === "agent") {
           setActionSteps([]);
+          setAgentSessionId(sessionId);
           agentRunRef.current = { sessionId };
           const run = MOCK_AGENT ? mockAgentStream : streamAgent;
           await run({
@@ -314,6 +321,7 @@ export function useConversation() {
     loadingHistory,
     sources,
     actionSteps,
+    agentSessionId,
     send,
     stop,
     selectSession,

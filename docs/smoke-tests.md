@@ -299,6 +299,12 @@ today against a **mock** stream (`VITE_MOCK_AGENT` on by default) for demos; thi
    tears the session down (agent reaper / no orphaned session) and the partial answer freezes.
 4. **Error frame.** An agent `error` event surfaces as the per-message stream-error state.
 5. **Chat unaffected.** Switching back to chat mode shows no action ticker and streams bare tokens as before.
+6. **ArtifactViewer (F5a).** After an agent run that writes files, the `⌗ artifacts` affordance appears above
+   the composer; opening it shows the file list and the selected file in a **read-only** Monaco editor with
+   correct syntax highlighting (language from the artifact's `language`, else inferred from the extension).
+   Switching the theme (`dark`/`typer`) re-themes the editor (`vs-dark`/`light`). A run with no artifacts shows
+   "this run produced no artifacts." Monaco is **self-hosted** — confirm no CDN request for the editor assets
+   in the network panel. (With `VITE_MOCK_AGENT=0`; the mock seam covers the local-demo path.)
 
 ### Record outcome here
 - [ ] Run on _____ by _____ — result:

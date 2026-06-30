@@ -255,3 +255,45 @@ turn's `span_id`). Also a batch of conversation-surface fixes the user asked for
 ### Next
 Close out F3 (Monaco artifact viewer), or F5 polish (a11y/responsive/error boundaries). Dashboard stays
 blocked on the server-side `/dashboard` SSE route.
+
+## Session F5a: Monaco ArtifactViewer — the last F3 bullet — 2026-06-30
+
+**Target**: build the deferred `ArtifactViewer` (Monaco) over `GET /agent/{id}/artifacts`, closing F3.
+
+### What landed
+- **`ArtifactViewer.tsx`** — a right-docked drawer (backdrop + `w-[min(720px,92vw)]` panel): a file list on
+  the left, a **read-only** Monaco editor on the right. Files come from `useQuery(queryKeys.artifacts(id))`;
+  language is the artifact's `language` or inferred from the filename extension (`languageFor`). Editor theme
+  follows `useTheme()` (`dark`→`vs-dark`, `typer`→`light`). Empty/loading/error states handled.
+- **Self-hosted Monaco** (`lib/monaco.ts`, `configureMonaco()`): `loader.config({ monaco })` + a single
+  `editor.worker` so the SPA needs **no CDN** (works offline / locked-down static deploy). Read-only, so the
+  ts/json/css/html language-service workers (IntelliSense/diagnostics) are skipped — Monarch highlighting runs
+  without them.
+- **Lazy-loaded** from `ConversationView` via `React.lazy` + `Suspense`, so the heavy editor sits in its own
+  chunk fetched only when a user opens the artifacts of an agent run.
+- **Mock seam** (`api/mockArtifacts.ts`, `mockListArtifacts`) — gated by the same flag as the agent stream,
+  now centralized as **`env.mockAgent`** (refactored `useConversation` off its inline `import.meta.env` read;
+  added `VITE_MOCK_AGENT` to `vite-env.d.ts` + `.env.example`). The local mock agent produces no real files,
+  so this keeps the viewer demoable without the live LangGraph backend. FUTURE-delete with the other mocks.
+- **Wiring**: `useConversation` now tracks `agentSessionId` (set on an agent-mode `send`, cleared on
+  new/`selectSession`); `ConversationView` shows a `⌗ artifacts` affordance above the composer that opens the
+  drawer.
+- **Affordance is existence-gated (prod-correct).** The `⌗ artifacts` button only renders when the run
+  **actually produced files** — `ConversationView` runs a `queryKeys.artifacts` query (enabled once the stream
+  finishes) and shows the button only when `data.length > 0`. A run that writes nothing shows no affordance. The
+  mock/live chooser is extracted to `fetchArtifacts` (`conversation/artifacts.ts`) so the gate-check and the
+  viewer share one query key — the drawer opens on a cache hit. (Mock returns 3 files, so the button shows in
+  local demo.)
+
+### Verification
+- `npm run typecheck` (`tsc -b --noEmit`) — 0 errors.
+- `npm run lint` — 0 errors, same 4 pre-existing `react-refresh` warnings (none in new files).
+- `npm run build` — green in ~32s. Monaco is code-split: the `ArtifactViewer` chunk (~3.35 MB / 863 kB gz)
+  and each language tokenizer are separate on-demand chunks; the main `index` bundle is unchanged (~508 kB).
+- Live click-through (open the drawer on a real agent run, syntax highlight, theme switch) is smoke test
+  **ST-F3 item 6** (`docs/smoke-tests.md`, PENDING — needs the real agent runtime; mock seam covers local demo).
+
+### Known limitations / deferred
+- **Bundle size**: full Monaco pulls every language's Monarch tokenizer (~3.35 MB lazy chunk). Acceptable for
+  an internal tool and it's code-split, but a FUTURE option is to curate the language set if it matters.
+- Artifacts are **read-only** (viewer, not editor) — matches the backend, which only serves files.
