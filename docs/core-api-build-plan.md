@@ -102,7 +102,7 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
   by design (see `docs/frontend-build-plan.md`).
 
 ### Session 10 — Steps 13–14: tests + logging
-- [x] `tests/unit` + RAG-security suite (104 tests: guard, chat-security, PDP, trajectory, MCP, observability, contract, auth, logging)
+- [x] `tests/unit` + RAG-security suite (142 tests: guard, chat-security, PDP, trajectory, MCP, observability, contract, auth, logging; **+ search_chunks, manage_session, manage_artifacts** — Session 20 coverage backfill of the three untested use-cases)
 - [x] File-based logging with stdout flag (`LOG_TO_FILE`) for CloudWatch switch — `_configure_logging` in `api/main.py` (stdout always + optional `LOG_DIR/LOG_FILE` handler); `test_logging.py` covers both modes
 
 ### Deferred queue/llm backends (any time)
