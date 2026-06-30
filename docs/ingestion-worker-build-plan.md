@@ -63,7 +63,7 @@ core — do it before connectors.
 | `AvScannerPort` | clamd client | a running **clamav** daemon (freshclam 3–6h refresh) | INSTREAM scan of raw bytes; the static magic-byte/size checks are already pure in `security_gate.py`. |
 | `ContentGuardPort` | Prompt Guard 2 + Llama Guard + Presidio | **Prompt Guard sidecar** (reuse the existing one), a **Llama Guard** endpoint, `presidio-analyzer` | `screen_injection` reuses the sidecar we already built; `screen_abuse` = Llama Guard; `redact_pii` = Presidio + regex. |
 | `ParserPort` | typed parsers | `pypdf`/`python-docx`/`openpyxl`; **OCR** (Tesseract local or Textract/AWS) for scanned PDFs | docx/txt→text, pdf→text-layer (+OCR fallback +tables), csv/xlsx→rows+schema, code→raw+lang, json→fields. |
-| `VectorSinkPort` | Qdrant writer | a **Qdrant** instance | upsert points (id = `chunk_id`) with named `dense`+`sparse` vectors + payload; delete by id. |
+| `VectorSinkPort` | Qdrant writer | a **Qdrant** instance | upsert points (id = `chunk_id`) with named `dense`+`sparse` vectors + payload; delete by id. **Keep `wait=True`** (read-your-writes on ACK, DD-20 addendum); `# FUTURE EXTENSION` read `consistency`/write `ordering` when Qdrant goes multi-node. |
 | `RegistryPort` | Postgres (asyncpg) | shared **RDS Postgres** | doc_registry / chunk_registry / quarantine per `postgres_ingestion.schema.sql`; powers delta + tombstones. |
 | `EmbedderPort` | worker-own bge-m3 | model weights (FlagEmbedding/transformers), RAM | dense + sparse, batched (`INGEST_EMBED_BATCH`); dim **must == 1024** (collection contract). |
 | `StagingPort` | S3 immutable staging | **S3** (or minio); IAM | write-once raw + manifest for replay/audit. |
