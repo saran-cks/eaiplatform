@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * Dev-mint login: collect tenant/subject/permissions, sign an HS256 token
- * in-browser (devMint adapter), then bounce to the originally requested route.
- * The Core API has no login route and never will — this only produces a bearer
- * the backend will *verify*. The Cognito path (prod) replaces this form with an
- * OIDC redirect behind the same AuthProvider seam.
+ * Login form. The Core API has no login route and never will — this only produces
+ * a bearer the backend will *verify* (DD-19). Two paths behind one AuthProvider seam:
+ * dev-mint collects tenant/subject/permissions and signs an HS256 token in-browser;
+ * cognito collects username/password and runs the SRP flow directly against the user
+ * pool (Option B — our own form, not the Hosted UI). Swap = VITE_AUTH_PROVIDER.
  */
 export function LoginPage() {
   const { provider, signInDevMint, signInCognito } = useAuth();
@@ -20,6 +20,9 @@ export function LoginPage() {
   const [tenantId, setTenantId] = useState("acme");
   const [subject, setSubject] = useState("dev-user");
   const [permissions, setPermissions] = useState("kb:read, agent:run, obs:read");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -29,7 +32,11 @@ export function LoginPage() {
     setBusy(true);
     try {
       if (provider === "cognito") {
-        await signInCognito();
+        await signInCognito({
+          username: username.trim(),
+          password,
+          newPassword: newPassword || undefined,
+        });
       } else {
         await signInDevMint({
           tenantId: tenantId.trim(),
@@ -62,6 +69,41 @@ export function LoginPage() {
               : "dev sign-in — mints a local HS256 token"}
           </p>
         </div>
+
+        {provider === "cognito" && (
+          <div className="space-y-3">
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">username</span>
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">password</span>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">
+                new password (only on first sign-in)
+              </span>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </label>
+          </div>
+        )}
 
         {provider === "dev-mint" && (
           <div className="space-y-3">

@@ -35,8 +35,9 @@ the API's static mount. See **DD-19** for why SPA-not-SSR and the full rationale
 - **Two stream shapes, both handled:** chat = bare `data: <token>` … `data: [DONE]`; agent = named
   events (`thought`/`worker_start`/`worker_done`/`synthesis`/`output`/`error`/`done`) with JSON data.
 - **Auth has a dev-mint path and a prod Cognito path behind one `AuthProvider` seam** (swap = config).
-  The Core API has **no login route** and never will — it only *verifies* a bearer JWT. Prod auth
-  (Cognito OIDC + claim mapping + backend RS256/JWKS swap) is **designed now, not wired yet**.
+  The Core API has **no login route** and never will — it only *verifies* a bearer JWT. Prod auth is now
+  **wired both sides** (Cognito SRP from our own form, FE Session F6; backend RS256/JWKS verifier, core-api
+  Session 23) — **code-complete, blocked only on standing up the user pool** (claim mapping + `ST-COG`).
 - **Permission-scoped rendering is UX defense-in-depth only** — the server re-enforces every scope.
 - **TypeScript types are generated from the backend OpenAPI** (`/openapi.json`) — single source of
   truth, no hand-maintained request/response types that can drift from the API.
@@ -81,9 +82,9 @@ frontend/
       observability/        #   traces / evals / datasets / drift / feedback
       dashboard/            #   PLACEHOLDER — pending /dashboard route
     auth/
-      AuthProvider.tsx      # one interface; dev-mint + Cognito-OIDC adapters
+      AuthProvider.tsx      # one interface; dev-mint + Cognito adapters
       devMint.ts            # dev-only token helper / paste
-      cognito.ts            # OIDC PKCE redirect (designed, wired later)
+      cognito.ts            # Cognito SRP from our own form (wired; Session F6)
       useScope.ts           # decode permissions[] for conditional rendering
     api/
       client.ts             # fetch wrapper: injects Bearer, handles 401/403
@@ -115,8 +116,10 @@ frontend/
       no generated `routeTree.gen.ts` step; route components still live under `src/routes/`.)*
 - [x] TanStack Query client; `api/client.ts` (Bearer injection, 401→login + token-clear, 403 surface).
 - [x] `auth/AuthProvider` interface + **dev-mint adapter** (in-browser HS256 mint via `jose`) + login page.
-- [x] **Cognito OIDC adapter stubbed** behind the same interface (config-gated; `signIn` throws a clear
-      "designed not wired" error until the user pool + RS256/JWKS swap land).
+- [x] **Cognito adapter — WIRED (Session F6, DD-19 Option B)**: `amazon-cognito-identity-js` SRP run from
+      our own login form (username/password, no Hosted UI redirect) behind the same `AuthProviderAdapter`
+      seam; bearer = `VITE_COGNITO_TOKEN_USE` (matches backend). Backend RS256/JWKS verifier landed (core-api
+      Session 23). Config-gated; live verification needs a real pool (**ST-COG, PENDING**).
 - [x] `useScope` — decode `permissions[]`/`tenant_id` for conditional rendering (UX-only; server re-enforces).
 - [x] `api/sse.ts` — `fetch-event-source` helpers for **both** stream shapes (bare-token + named-event),
       with 401/403 mapping, abort/disconnect handling, and auto-retry disabled (finite streams).
@@ -181,10 +184,14 @@ frontend/
       and the ML pipeline that feeds it. Placeholder route only until then.
 - [ ] Accessibility pass, responsive layout, error boundaries, build/deploy as static assets.
 
-### Prod auth — wire when infra is ready (BLOCKED on backend)
-- [ ] Stand up the Cognito user pool + app client; map profile/group attrs → `permissions`/`tenant_id`.
-- [ ] Backend: swap the HS256 verifier for **RS256/JWKS** (core-api note) — coordinate, not a FE-only change.
-- [ ] Flip the `AuthProvider` config from dev-mint to Cognito-OIDC; no feature-surface change expected.
+### Prod auth — wire when infra is ready (BLOCKED on infra, not code)
+- [x] Backend: swap the HS256 verifier for **RS256/JWKS** — DONE (core-api Session 23, `CognitoJwtVerifier`).
+- [x] Frontend: wire the Cognito SRP adapter behind the seam — DONE (Session F6).
+- [ ] Stand up the Cognito user pool + **public app client** (SRP, no secret); map the group → `permissions`
+      and a tenant attribute → `tenant_id` (id token carries `custom:tenant_id`; access token needs a
+      pre-token Lambda — must match `VITE_COGNITO_TOKEN_USE`/`COGNITO_TOKEN_USE`).
+- [ ] Flip `VITE_AUTH_PROVIDER=cognito` (+ `AUTH_PROVIDER=cognito` on the backend) and run **ST-COG**; no
+      feature-surface change expected.
 
 ---
 

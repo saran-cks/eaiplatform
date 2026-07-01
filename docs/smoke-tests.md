@@ -390,3 +390,54 @@ PENDING until the embedding sidecar + Bedrock creds + ingested data are availabl
   `/collections` 200; phoenix `/healthz` 200. postgres/valkey reported `healthy`; qdrant/phoenix stayed
   `health: starting` due to the missing-`curl` healthcheck above, but both served HTTP 200 directly.
   Sidecars and `core_api` intentionally not started.
+
+---
+
+## ST-COG: Cognito auth — live RS256/JWKS verification against a real user pool — added 2026-07-01 — **PENDING**
+
+Core-api Session 23 landed the `CognitoJwtVerifier` (RS256 + JWKS) behind `AUTH_PROVIDER=cognito`. Unit
+tests (`test_cognito_verifier.py`) prove verification + claim mapping against an **in-test** JWKS, but the
+real issuer, real JWKS rotation, and the Cognito↔claim mapping can only be confirmed against a live pool —
+which does not exist until AWS infra is provisioned. Hence PENDING.
+
+### Prereqs
+- A provisioned **Cognito user pool** + **app client** (public client, USER_SRP_AUTH enabled — no secret).
+- At least one user whose token carries the tenant + group claims: the **`developers` (or similar) group**
+  → maps to `permissions`; a **tenant attribute** → maps to `tenant_id`. If verifying the **access** token
+  (default), `custom:tenant_id` needs a **pre-token-generation Lambda** to appear there; if that Lambda
+  isn't set up yet, set `COGNITO_TOKEN_USE=id` and put `tenant_id` in `custom:tenant_id` on the id token.
+- Core API running with: `AUTH_PROVIDER=cognito`, `COGNITO_REGION` (or `AWS_REGION`), `COGNITO_USER_POOL_ID`,
+  `COGNITO_APP_CLIENT_ID`, and `COGNITO_TOKEN_USE` matching the token you mint.
+- A way to obtain a real token: the SPA's SRP login, or `aws cognito-idp initiate-auth`/`admin-initiate-auth`.
+
+### What to verify
+1. **Happy path.** A valid, unexpired token for a user in the mapped group → `GET /search?query=…` (or any
+   authed route) returns 200 and the request is scoped to that user's `tenant_id` + `permissions` (i.e.
+   Qdrant results are tenant-filtered; a permission-gated action reflects the group mapping).
+2. **Claim mapping.** Confirm `cognito:groups` became `permissions` and the tenant attribute became
+   `tenant_id` (e.g. a user with no group is denied a permissioned action; wrong tenant sees no chunks).
+3. **JWKS fetch + cache.** First authed request triggers exactly one JWKS GET to
+   `https://cognito-idp.<region>.amazonaws.com/<pool>/.well-known/jwks.json` (check logs/network); later
+   requests reuse the cache (no refetch within the TTL).
+4. **Rejections (all → 401).** (a) expired token; (b) token from a *different* pool/issuer; (c) token for a
+   *different* app client (`client_id`/`aud` mismatch); (d) `token_use` mismatch (send an id token while
+   `COGNITO_TOKEN_USE=access`, or vice-versa); (e) tampered signature.
+5. **Missing tenant → 403.** A token lacking the mapped tenant claim verifies (signature OK) but
+   `PermissionScope.from_claims` rejects it → **403** (not 401), confirming the 401/403 split.
+6. **Dev unaffected.** Flip back to `AUTH_PROVIDER=hs256` → the dev-mint HS256 flow still works (no regresson).
+
+### Frontend (SRP login — DD-19 Option B, FE Session F6)
+Additional prereqs: `VITE_AUTH_PROVIDER=cognito`, `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`
+(the **public** app client — SRP, no secret), and `VITE_COGNITO_TOKEN_USE` **matching** the backend's
+`COGNITO_TOKEN_USE`. The app client must have **USER_SRP_AUTH** enabled.
+7. **SRP sign-in.** On `/login` (cognito mode shows username/password fields, not the dev-mint tenant fields),
+   sign in with a real pool user → lands on `/conversation`, and authed requests succeed (the bearer is the
+   chosen token). Confirm **no `global is not defined`** runtime error (the Vite `define` fix holds).
+8. **First-login challenge.** An admin-created user in `FORCE_CHANGE_PASSWORD`: signing in with only a password
+   shows the "must set a new password" error; re-submitting with the "new password" field completes the
+   `NEW_PASSWORD_REQUIRED` challenge and signs in.
+9. **Restore + signout.** Reload the tab → session restores (SDK refresh, no re-login); "sign out" clears it and
+   bounces to `/login`. A user missing the tenant claim gets the clear "token carries no tenant_id" error.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:

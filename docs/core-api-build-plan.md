@@ -43,6 +43,11 @@ display only), MCP external connectors, A2A interop. Ingestion worker is **out o
 ### Session 2 — Step 5: first runnable slice  ✅ DONE
 - [x] `api/main.py` app factory + lifespan (start/stop daemon tasks)
 - [x] `api/middleware/auth.py` (HS256 decode -> PermissionScope -> request.state)
+  - [x] **Full Cognito auth — the planned RS256/JWKS swap (Session 23, DD-19 addendum)** — extracted the
+    verifier seam `TokenVerifierPort` (`core/ports/token_verifier.py`) with `HS256TokenVerifier` (dev) +
+    `CognitoJwtVerifier` (prod, RS256+JWKS, claim mapping) under `adapters/auth/`; bound in `di.py` by
+    `AUTH_PROVIDER`; middleware now transport-agnostic. Verify-only (DD-19 upheld); browser does Cognito SRP
+    directly. Config-gated (no live pool yet) — live check is **ST-COG (PENDING)**.
 - [x] `api/middleware/telemetry.py` (OTel span per request)
 - [x] `api/routes/health.py` (`/health` liveness, `/ready` readiness)
 - [x] `api/schemas/health.py`

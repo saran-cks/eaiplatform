@@ -3,7 +3,7 @@ import { SignJWT } from "jose";
 import { env } from "@/lib/env";
 import { decodeClaims, readStoredToken } from "@/store/auth";
 
-import type { AuthProviderAdapter, AuthSession, DevMintOptions } from "./types";
+import type { AuthProviderAdapter, AuthSession, SignInOptions } from "./types";
 
 /**
  * Local-dev auth: mint an HS256 JWT in the browser against the shared dev secret
@@ -27,8 +27,10 @@ export function createDevMintAdapter(): AuthProviderAdapter {
       return { token, claims };
     },
 
-    async signIn(options?: DevMintOptions): Promise<AuthSession | null> {
-      if (!options) throw new Error("dev-mint signIn requires DevMintOptions");
+    async signIn(options?: SignInOptions): Promise<AuthSession | null> {
+      if (!options || !("tenantId" in options)) {
+        throw new Error("dev-mint signIn requires DevMintOptions");
+      }
       const ttl = options.ttlSeconds ?? 3600;
       const secret = new TextEncoder().encode(env.devJwt.secret);
 

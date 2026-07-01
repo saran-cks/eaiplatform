@@ -1,8 +1,10 @@
 """JWT authentication middleware.
 
-Decodes the ``Authorization: Bearer <token>`` header using the configured HS256
-shared secret and builds a ``PermissionScope`` value object that is attached to
-``request.state.scope``.
+Verifies the ``Authorization: Bearer <token>`` header via the injected
+``TokenVerifierPort`` (HS256 shared-secret in dev, Cognito RS256/JWKS in prod — bound in
+``config/di.py`` by ``AUTH_PROVIDER``) and builds a ``PermissionScope`` value object that
+is attached to ``request.state.scope``. The middleware knows nothing about *how* a token
+is verified — only the port's contract (DD-19).
 
 Public paths (health probes, docs) bypass authentication entirely.
 """
@@ -12,12 +14,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import jwt
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from core.domain.value_objects.permission_scope import PermissionScope
+from core.ports.token_verifier import TokenVerificationError, TokenVerifierPort
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -37,16 +39,11 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Extract and verify JWT, build PermissionScope, attach to request.state."""
+    """Verify the bearer token via the port, build PermissionScope, attach to request.state."""
 
-    def __init__(
-        self, app: FastAPI, *, secret: str, algorithm: str, audience: str, issuer: str
-    ) -> None:
+    def __init__(self, app: FastAPI, *, verifier: TokenVerifierPort) -> None:
         super().__init__(app)
-        self._secret = secret
-        self._algorithm = algorithm
-        self._audience = audience
-        self._issuer = issuer
+        self._verifier = verifier
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for public paths.
@@ -63,19 +60,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         token = auth_header[7:]  # Strip "Bearer "
 
         try:
-            claims = jwt.decode(
-                token,
-                self._secret,
-                algorithms=[self._algorithm],
-                audience=self._audience,
-                issuer=self._issuer,
-                options={"require": ["iss", "aud"]},
-            )
-        except jwt.ExpiredSignatureError:
-            return JSONResponse(status_code=401, content={"detail": "Token expired"})
-        except jwt.InvalidTokenError as exc:
-            logger.warning("JWT decode failed: %s", exc)
-            return JSONResponse(status_code=401, content={"detail": "Invalid token"})
+            claims = await self._verifier.verify(token)
+        except TokenVerificationError as exc:
+            logger.warning("Token verification failed: %s", exc.detail)
+            return JSONResponse(status_code=401, content={"detail": exc.detail})
 
         try:
             scope = PermissionScope.from_claims(claims)

@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from adapters.auth.hs256_verifier import HS256TokenVerifier
 from api.middleware.auth import AuthMiddleware
 
 SECRET = "test-secret-at-least-32-bytes-long-for-hs256"
@@ -44,13 +45,10 @@ async def _whoami(request: Request) -> JSONResponse:
 @pytest.fixture
 def client() -> TestClient:
     app = Starlette(routes=[Route("/whoami", _whoami)])
-    app.add_middleware(
-        AuthMiddleware,
-        secret=SECRET,
-        algorithm=ALGORITHM,
-        audience=AUDIENCE,
-        issuer=ISSUER,
+    verifier = HS256TokenVerifier(
+        secret=SECRET, algorithm=ALGORITHM, audience=AUDIENCE, issuer=ISSUER
     )
+    app.add_middleware(AuthMiddleware, verifier=verifier)
     return TestClient(app)
 
 

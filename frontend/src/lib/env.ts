@@ -11,10 +11,16 @@ export const env = {
     audience: import.meta.env.VITE_DEV_JWT_AUDIENCE ?? "core-api-clients",
   },
   cognito: {
-    authority: import.meta.env.VITE_COGNITO_AUTHORITY ?? "",
+    /** User pool id, e.g. us-east-1_abc123 (region is parsed from it by the SDK). */
+    userPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID ?? "",
+    /** App client id (public client, no secret — SRP from the browser). */
     clientId: import.meta.env.VITE_COGNITO_CLIENT_ID ?? "",
-    redirectUri: import.meta.env.VITE_COGNITO_REDIRECT_URI ?? "",
-    scope: import.meta.env.VITE_COGNITO_SCOPE ?? "openid profile email",
+    /**
+     * Which token to send as the bearer — must match the Core API's
+     * COGNITO_TOKEN_USE. "access" (default) is the correct API-auth token;
+     * "id" carries custom:tenant_id without a pre-token Lambda.
+     */
+    tokenUse: (import.meta.env.VITE_COGNITO_TOKEN_USE ?? "access") as "access" | "id",
   },
   /** Phoenix UI origin the observability tab links out to (obs:admin only). */
   phoenixUrl: import.meta.env.VITE_PHOENIX_URL ?? "http://localhost:6006",

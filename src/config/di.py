@@ -30,6 +30,7 @@ from core.ports.observability import ObservabilityPort
 from core.ports.queue import QueuePort
 from core.ports.retriever import RetrieverPort
 from core.ports.store import StorePort
+from core.ports.token_verifier import TokenVerifierPort
 
 if TYPE_CHECKING:
     from core.use_cases.observability.evaluate_turn import EvaluateTurnUseCase
@@ -48,6 +49,29 @@ class Container:
     @property
     def settings(self) -> Settings:
         return self._settings
+
+    # --- auth (inbound token verification; middleware seam, DD-19) ---
+    @cached_property
+    def token_verifier(self) -> TokenVerifierPort:
+        """The verifier the AuthMiddleware runs. Swap = flip AUTH_PROVIDER, no code change."""
+        if self._settings.auth_provider == "cognito":
+            from adapters.auth.cognito_verifier import CognitoJwtVerifier
+            return CognitoJwtVerifier(
+                region=self._settings.cognito_region or self._settings.aws_region,
+                user_pool_id=self._settings.cognito_user_pool_id,
+                app_client_id=self._settings.cognito_app_client_id,
+                token_use=self._settings.cognito_token_use,
+                tenant_claim=self._settings.cognito_tenant_claim,
+                groups_claim=self._settings.cognito_groups_claim,
+                jwks_cache_ttl=self._settings.cognito_jwks_cache_ttl,
+            )
+        from adapters.auth.hs256_verifier import HS256TokenVerifier
+        return HS256TokenVerifier(
+            secret=self._settings.jwt_secret,
+            algorithm=self._settings.jwt_algorithm,
+            audience=self._settings.jwt_audience,
+            issuer=self._settings.jwt_issuer,
+        )
 
     # --- storage (Session 3) ---
     @cached_property

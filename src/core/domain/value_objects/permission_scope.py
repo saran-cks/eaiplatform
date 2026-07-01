@@ -7,6 +7,7 @@ derived inside an adapter. Immutable by construction (frozen).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 
@@ -36,7 +37,7 @@ class PermissionScope:
             )
 
     @classmethod
-    def from_claims(cls, claims: dict[str, object]) -> PermissionScope:
+    def from_claims(cls, claims: Mapping[str, object]) -> PermissionScope:
         """Build a scope from decoded JWT claims (tenant_id, permissions, sub)."""
         tenant = claims.get("tenant_id")
         if not isinstance(tenant, str) or not tenant:

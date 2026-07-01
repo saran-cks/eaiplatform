@@ -297,3 +297,49 @@ blocked on the server-side `/dashboard` SSE route.
 - **Bundle size**: full Monaco pulls every language's Monarch tokenizer (~3.35 MB lazy chunk). Acceptable for
   an internal tool and it's code-split, but a FUTURE option is to curate the language set if it matters.
 - Artifacts are **read-only** (viewer, not editor) — matches the backend, which only serves files.
+
+## Session F6: wire the Cognito adapter — SRP from our own login form (DD-19, Option B) — 2026-07-01
+
+**Target**: unstub `auth/cognito.ts` so the prod auth path actually works once a user pool exists, paired
+with the backend's new RS256/JWKS verifier (core-api Session 23). Chosen model is **Option B**: our own
+login form authenticates the browser **directly** against Cognito via `amazon-cognito-identity-js` (SRP) —
+**not** the Hosted UI redirect the stub had sketched. The backend stays a pure verifier (DD-19 upheld); the
+password never touches the Core API.
+
+### Steps completed
+- **Dep**: added `amazon-cognito-identity-js@^6` (browser SRP, no client secret). Added `define: { global:
+  "globalThis" }` to `vite.config.ts` — the lib references `global`, which Vite/ESM doesn't define in the
+  browser (would throw `ReferenceError: global is not defined` at runtime).
+- **Seam carries credentials now** (`auth/types.ts`): the old interface assumed Cognito = redirect
+  (`signInCognito()` took no args). Added `CognitoCredentials { username, password, newPassword? }` and a
+  `SignInOptions = DevMintOptions | CognitoCredentials` union; `AuthProviderAdapter.signIn(options?)` widened
+  to it. `devMint.ts` narrows with `"tenantId" in options`; `cognito.ts` narrows with `"username" in options`.
+- **`cognito.ts`** (rewritten): `CognitoUserPool({UserPoolId, ClientId})`; `signIn` runs `authenticateUser`
+  (SRP), resolving `onSuccess`, rejecting `onFailure`, and handling `newPasswordRequired` (completes the
+  challenge when a new password is supplied — the admin-created-user first-login case; pools that *require*
+  new attributes are a FUTURE EXTENSION). `restore()` rehydrates from the SDK's cached session
+  (`getCurrentUser().getSession()`, auto-refreshes via the refresh token). `signOut()` clears the cached
+  tokens. The **bearer is `VITE_COGNITO_TOKEN_USE`** (default `access`, matching the backend's
+  `COGNITO_TOKEN_USE`); `sessionToAuth` decodes claims via the existing `decodeClaims` and throws a clear
+  operator error if the token carries no `tenant_id`/`permissions` (pointing at the id-token vs pre-token-Lambda
+  choice — same requirement the backend has).
+- **`AuthProvider.tsx`**: `signInCognito(credentials)` now calls the adapter and `setSession` on success (SRP
+  completes in-page — no redirect round-trip). `login.tsx`: renders username/password (+ optional "new password
+  — first sign-in") fields for the cognito provider; the dev-mint form is unchanged. `lib/env.ts` + `.env.example`:
+  swapped the redirect-oriented `VITE_COGNITO_AUTHORITY/REDIRECT_URI/SCOPE` for SRP's
+  `VITE_COGNITO_USER_POOL_ID` + `VITE_COGNITO_TOKEN_USE` (kept `VITE_COGNITO_CLIENT_ID`).
+
+### Issues faced & resolved
+- **`global` footgun**: anticipated the `amazon-cognito-identity-js` `ReferenceError: global is not defined`
+  and pre-empted it with the Vite `define` above, since it can't be caught by typecheck/build and there's no
+  live pool to runtime-test against this session.
+- **Union narrowing**: widening `signIn` to a union initially broke `devMint.ts`'s `options.tenantId` access;
+  fixed with an `"tenantId" in options` guard (and the symmetric `"username" in options` in cognito).
+
+### Verification
+- `npm run typecheck` — 0 errors. `npm run lint` — 0 errors, same 4 pre-existing `react-refresh` warnings
+  (none in the changed files). `npm run build` — green in ~25s; the Cognito SDK bundles into the main
+  `index` chunk. No frontend unit-test harness exists (the SPA is gated by typecheck+lint+build), so no unit
+  test was added — live SRP verification needs a real pool and is **ST-COG** (`docs/smoke-tests.md`, PENDING).
+- No new DD — this executes DD-19's prod-auth plan (the Option-B stance is already recorded in the DD-19
+  addendum added with core-api Session 23). Build-plan Session F1 Cognito line updated from "stubbed" to wired.

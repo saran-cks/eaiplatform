@@ -25,6 +25,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // `amazon-cognito-identity-js` (Cognito SRP adapter) references `global`, which
+    // Vite/ESM does not define in the browser — alias it to globalThis to avoid a
+    // runtime ReferenceError. Harmless for the dev-mint path.
+    define: {
+      global: "globalThis",
+    },
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),

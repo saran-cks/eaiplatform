@@ -13,7 +13,7 @@ import { useAuthStore } from "@/store/auth";
 
 import { createCognitoAdapter } from "./cognito";
 import { createDevMintAdapter } from "./devMint";
-import type { AuthProviderAdapter, DevMintOptions } from "./types";
+import type { AuthProviderAdapter, CognitoCredentials, DevMintOptions } from "./types";
 
 interface AuthContextValue {
   provider: AuthProviderAdapter["kind"];
@@ -21,7 +21,7 @@ interface AuthContextValue {
   initializing: boolean;
   isAuthenticated: boolean;
   signInDevMint: (options: DevMintOptions) => Promise<void>;
-  signInCognito: () => Promise<void>;
+  signInCognito: (credentials: CognitoCredentials) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -60,9 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [setSession],
   );
 
-  const signInCognito = useCallback(async () => {
-    await createCognitoAdapter().signIn();
-  }, []);
+  const signInCognito = useCallback(
+    async (credentials: CognitoCredentials) => {
+      const session = await createCognitoAdapter().signIn(credentials);
+      if (session) setSession(session);
+    },
+    [setSession],
+  );
 
   const signOut = useCallback(async () => {
     await adapter.signOut();

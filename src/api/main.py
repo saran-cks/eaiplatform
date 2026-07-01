@@ -132,6 +132,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.warning("Error closing observability adapter: %s", exc)
 
+    if "token_verifier" in container.__dict__:
+        try:
+            await container.token_verifier.close()
+        except Exception as exc:
+            logger.warning("Error closing token verifier: %s", exc)
+
     logger.info("%s stopped", settings.app_name)
 
 
@@ -157,14 +163,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # --- Middleware (order matters: outermost first) ---
     # Telemetry wraps everything (including auth), so it captures full request duration.
     app.add_middleware(TelemetryMiddleware)
-    # Auth runs after telemetry, before route handlers.
-    app.add_middleware(
-        AuthMiddleware,
-        secret=settings.jwt_secret,
-        algorithm=settings.jwt_algorithm,
-        audience=settings.jwt_audience,
-        issuer=settings.jwt_issuer,
-    )
+    # Auth runs after telemetry, before route handlers. The verifier (HS256 dev / Cognito
+    # RS256 prod) is selected in the container by AUTH_PROVIDER — the middleware is agnostic.
+    app.add_middleware(AuthMiddleware, verifier=container.token_verifier)
 
     # --- Routes ---
     app.include_router(health_router)

@@ -39,13 +39,34 @@ class Settings(BaseSettings):
     api_host: str = Field("0.0.0.0", alias="API_HOST")
     api_port: int = Field(8000, alias="API_PORT")
 
-    # --- JWT (HS256 shared secret) ---
+    # --- Auth provider selection ---
+    # Which TokenVerifierPort adapter the middleware runs (bound in config/di.py):
+    #   "hs256"   — local dev shared-secret JWT (below).
+    #   "cognito" — AWS Cognito RS256/JWKS (DD-19 prod path). Flip this + set COGNITO_* once
+    #               the user pool exists; no code change (the verifier is swapped, not edited).
+    auth_provider: Literal["hs256", "cognito"] = Field("hs256", alias="AUTH_PROVIDER")
+
+    # --- JWT (HS256 shared secret; AUTH_PROVIDER=hs256) ---
     jwt_secret: str = Field("change-me-dev-only", alias="JWT_SECRET")
     jwt_algorithm: str = Field("HS256", alias="JWT_ALGORITHM")
     jwt_issuer: str = Field("core-api", alias="JWT_ISSUER")
     jwt_audience: str = Field("core-api-clients", alias="JWT_AUDIENCE")
     jwt_access_ttl_seconds: int = Field(3600, alias="JWT_ACCESS_TTL_SECONDS")
     jwt_refresh_ttl_seconds: int = Field(2_592_000, alias="JWT_REFRESH_TTL_SECONDS")
+
+    # --- AWS Cognito (RS256 / JWKS; AUTH_PROVIDER=cognito) ---
+    # Region defaults to AWS_REGION when left blank. Issuer/JWKS URL are derived in the adapter
+    # from region + user pool id, so only the pool + app-client ids are required here.
+    cognito_region: str = Field("", alias="COGNITO_REGION")
+    cognito_user_pool_id: str = Field("", alias="COGNITO_USER_POOL_ID")
+    cognito_app_client_id: str = Field("", alias="COGNITO_APP_CLIENT_ID")
+    # Which Cognito token the API treats as its credential. "access" (default) is the correct
+    # API-authorization token; "id" avoids a pre-token Lambda for tenant_id (see the adapter).
+    cognito_token_use: Literal["access", "id"] = Field("access", alias="COGNITO_TOKEN_USE")
+    # Claim-name mapping onto the canonical PermissionScope keys (anti-corruption in the adapter).
+    cognito_tenant_claim: str = Field("custom:tenant_id", alias="COGNITO_TENANT_CLAIM")
+    cognito_groups_claim: str = Field("cognito:groups", alias="COGNITO_GROUPS_CLAIM")
+    cognito_jwks_cache_ttl: int = Field(3600, alias="COGNITO_JWKS_CACHE_TTL")
 
     # --- Postgres ---
     postgres_host: str = Field("postgres", alias="POSTGRES_HOST")
