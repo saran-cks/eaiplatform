@@ -226,6 +226,32 @@ the service logic is unchanged.
 
 ---
 
+## ST-6: Observability read-side — live cross-tenant isolation (DD-25) — added 2026-07-01 — **PENDING**
+
+Session 25 (`docs/core-api-dev-log.md`, DD-25) tenant-scopes `GET /observability/traces|evals|datasets`.
+Unit tests use a fake Phoenix client; what's unverified is that the **real self-hosted Phoenix server**
+filters correctly on the `tenant.id` span attribute + the `t:{tenant}:` dataset prefix. Run with the
+`phoenix` service up (`OTEL_ENABLED=true`) after generating traffic for **two** tenants — mint two JWTs
+with different `tenant_id` (dev-mint path, or two Cognito users per ST-COG).
+
+### What to verify
+1. **Trace isolation.** Drive a chat turn as tenant A and another as tenant B. `GET /observability/traces`
+   with A's token returns only A's spans (query text + retrieved-chunk content); B's spans never appear,
+   and vice-versa. Confirm the same for a session id — A cannot pass B's `session_id` to see B's turn.
+2. **Eval isolation.** With `EVAL_ENABLED=true`, sampled turns annotate each tenant's LLM span.
+   `GET /observability/evals` returns only the caller-tenant's annotations.
+3. **Dataset isolation.** `curate_dataset` for A and B; `GET /observability/datasets` with A's token lists
+   only A's datasets, with the `t:{tenant}:` prefix stripped to the logical name.
+4. **Fail-closed on untagged spans.** A span with no `tenant.id` (e.g. a legacy/system span) is **excluded**
+   from every tenant's read, not returned to all.
+5. **Drift unchanged.** `GET /observability/drift` still returns the caller-tenant's signal (it was already
+   scoped) — no regression.
+
+### Record outcome here
+- [ ] Run on _____ by _____ — result:
+
+---
+
 ## ST-F1: Frontend SPA — live against a running Core API — added 2026-06-29 — **PENDING**
 
 Session F1 scaffolded the frontend (`docs/frontend-dev-log.md`) and it builds green, but it has only

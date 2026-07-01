@@ -150,21 +150,29 @@ class ObservabilityPort(Protocol):
         ...
 
     async def curate_dataset(
-        self, *, dataset: str, examples: Sequence[Mapping[str, Any]]
+        self, *, tenant_id: str, dataset: str, examples: Sequence[Mapping[str, Any]]
     ) -> None:
-        """Append labelled real-traffic examples to a named dataset for offline eval."""
+        """Append labelled real-traffic examples to a named dataset for offline eval.
+
+        ``tenant_id`` scopes the dataset: the write and the read side (``get_datasets``)
+        agree on a tenant-namespaced identity so one tenant never sees another's data."""
         ...
 
     # --- read side (backs /observability routes) --------------------------
+    # ``tenant_id`` is mandatory on every read: the /observability routes carry query text
+    # and retrieved-chunk content, so results MUST be filtered to the caller's tenant. It is
+    # the PermissionScope's tenant, passed top-down; adapters filter, never derive it.
     async def get_traces(
-        self, *, limit: int = 50, session_id: str | None = None
+        self, *, tenant_id: str, limit: int = 50, session_id: str | None = None
     ) -> Sequence[Mapping[str, Any]]:
         ...
 
-    async def get_evals(self, *, limit: int = 50) -> Sequence[Mapping[str, Any]]:
+    async def get_evals(
+        self, *, tenant_id: str, limit: int = 50
+    ) -> Sequence[Mapping[str, Any]]:
         ...
 
-    async def get_datasets(self) -> Sequence[Mapping[str, Any]]:
+    async def get_datasets(self, *, tenant_id: str) -> Sequence[Mapping[str, Any]]:
         ...
 
     async def drift_check(self, *, tenant_id: str | None = None) -> Mapping[str, Any]:

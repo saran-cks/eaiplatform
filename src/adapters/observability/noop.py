@@ -67,19 +67,21 @@ class NoOpObservability(ObservabilityPort):
         pass
 
     async def curate_dataset(
-        self, *, dataset: str, examples: Sequence[Mapping[str, Any]]
+        self, *, tenant_id: str, dataset: str, examples: Sequence[Mapping[str, Any]]
     ) -> None:
         pass
 
     async def get_traces(
-        self, *, limit: int = 50, session_id: str | None = None
+        self, *, tenant_id: str, limit: int = 50, session_id: str | None = None
     ) -> Sequence[Mapping[str, Any]]:
         return []
 
-    async def get_evals(self, *, limit: int = 50) -> Sequence[Mapping[str, Any]]:
+    async def get_evals(
+        self, *, tenant_id: str, limit: int = 50
+    ) -> Sequence[Mapping[str, Any]]:
         return []
 
-    async def get_datasets(self) -> Sequence[Mapping[str, Any]]:
+    async def get_datasets(self, *, tenant_id: str) -> Sequence[Mapping[str, Any]]:
         return []
 
     async def drift_check(self, *, tenant_id: str | None = None) -> Mapping[str, Any]:

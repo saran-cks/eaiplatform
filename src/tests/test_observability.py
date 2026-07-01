@@ -26,7 +26,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from adapters.observability.noop import NoOpObservability
 from adapters.observability.phoenix import semconv
-from adapters.observability.phoenix.client import PhoenixObservabilityAdapter
+from adapters.observability.phoenix.client import PhoenixObservabilityAdapter, _span_id
 from adapters.observability.phoenix.drift import EmbeddingDriftTracker
 from core.ports.observability import ObsAttr, SpanKind
 from observability import drift as drift_math
@@ -169,7 +169,7 @@ async def test_noop_observability():
         s.set_attribute(ObsAttr.OUTPUT, "a")
         assert s.span_id is None
     await obs.record_eval(span_id="s", name="n")  # no raise
-    assert await obs.get_traces() == []
+    assert await obs.get_traces(tenant_id="t1") == []
     assert (await obs.drift_check())["status"] == "disabled"
 
 
@@ -225,7 +225,106 @@ async def test_phoenix_eval_failsoft_without_client(in_memory_spans):
     adapter = PhoenixObservabilityAdapter(_settings(), cache=FakeCache())
     # phoenix.client may be absent / base_url unreachable → must not raise.
     await adapter.record_eval(span_id="abc", name="Hallucination", label="factual", score=1.0)
-    assert list(await adapter.get_traces()) == [] or True  # no raise is the assertion
+    assert list(await adapter.get_traces(tenant_id="t1")) == []  # no raise + fail-soft empty
+
+
+# ------------------------------------------------------- read-side tenant isolation
+class _FakeSpans:
+    def __init__(self, spans: list[dict[str, Any]]) -> None:
+        self._spans = spans
+        self.annotated_ids: list[str] | None = None
+
+    async def get_spans(self, *, project_identifier, limit):
+        return self._spans
+
+    async def get_span_annotations(self, *, project_identifier, span_ids):
+        self.annotated_ids = list(span_ids)
+        return [{"span_id": sid, "name": "Hallucination"} for sid in span_ids]
+
+
+class _FakeDatasets:
+    def __init__(self, datasets: list[dict[str, Any]]) -> None:
+        self._datasets = datasets
+        self.created: list[str] = []
+
+    async def list(self):
+        return self._datasets
+
+    async def add_examples_to_dataset(self, *, dataset, inputs, outputs, metadata):
+        self.created.append(dataset)
+
+
+class _FakePhoenix:
+    def __init__(self, *, spans=None, datasets=None) -> None:
+        self.spans = _FakeSpans(spans or [])
+        self.datasets = _FakeDatasets(datasets or [])
+
+
+def _span(tenant: str, span_id: str, session: str | None = None) -> dict[str, Any]:
+    attrs: dict[str, Any] = {"tenant.id": tenant}
+    if session:
+        attrs["session.id"] = session
+    return {"attributes": attrs, "context": {"span_id": span_id}}
+
+
+def _adapter_with(client: _FakePhoenix) -> PhoenixObservabilityAdapter:
+    adapter = PhoenixObservabilityAdapter(_settings(), cache=FakeCache())
+    adapter._client = client  # bypass the lazy real-client build
+    return adapter
+
+
+@pytest.mark.asyncio
+async def test_get_traces_filters_to_caller_tenant():
+    client = _FakePhoenix(
+        spans=[_span("t1", "a", "s1"), _span("t2", "b", "s2"), _span("t1", "c", "s3")]
+    )
+    adapter = _adapter_with(client)
+    traces = await adapter.get_traces(tenant_id="t1")
+    ids = {_span_id(s) for s in traces}
+    assert ids == {"a", "c"}  # t2's span "b" is never returned
+
+
+@pytest.mark.asyncio
+async def test_get_traces_session_filter_is_tenant_scoped():
+    # A session id belonging to another tenant must not surface that tenant's span.
+    client = _FakePhoenix(spans=[_span("t1", "a", "shared"), _span("t2", "b", "shared")])
+    adapter = _adapter_with(client)
+    traces = await adapter.get_traces(tenant_id="t1", session_id="shared")
+    assert {_span_id(s) for s in traces} == {"a"}
+
+
+@pytest.mark.asyncio
+async def test_get_evals_only_annotates_caller_tenant_spans():
+    client = _FakePhoenix(spans=[_span("t1", "a"), _span("t2", "b"), _span("t1", "c")])
+    adapter = _adapter_with(client)
+    await adapter.get_evals(tenant_id="t1")
+    assert client.spans.annotated_ids == ["a", "c"]  # t2's span id never queried
+
+
+@pytest.mark.asyncio
+async def test_get_datasets_filters_and_strips_tenant_prefix():
+    client = _FakePhoenix(
+        datasets=[
+            {"name": "t:t1:golden", "id": "1"},
+            {"name": "t:t2:secret", "id": "2"},
+            {"name": "legacy-unscoped", "id": "3"},
+        ]
+    )
+    adapter = _adapter_with(client)
+    out = await adapter.get_datasets(tenant_id="t1")
+    assert [d["name"] for d in out] == ["golden"]  # only t1's, prefix stripped
+
+
+@pytest.mark.asyncio
+async def test_curate_dataset_namespaces_by_tenant():
+    from adapters.observability.phoenix.client import _tenant_dataset_name
+
+    client = _FakePhoenix()
+    adapter = _adapter_with(client)
+    await adapter.curate_dataset(
+        tenant_id="t1", dataset="golden", examples=[{"q": "x", "output": "y"}]
+    )
+    assert client.datasets.created == [_tenant_dataset_name("t1", "golden")]
 
 
 # --------------------------------------------------------------------------- eval runner

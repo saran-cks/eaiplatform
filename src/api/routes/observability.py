@@ -42,22 +42,24 @@ async def get_traces(
     limit: int = Query(50, ge=1, le=500),
     session_id: str | None = Query(None),
 ) -> ListOut:
-    _get_scope(request)
-    items = await _use_case(request).traces(limit=limit, session_id=session_id)
+    scope = _get_scope(request)
+    items = await _use_case(request).traces(
+        tenant_id=scope.tenant_id, limit=limit, session_id=session_id
+    )
     return ListOut(items=list(items), count=len(items))
 
 
 @router.get("/observability/evals", response_model=ListOut, summary="Recent evals")
 async def get_evals(request: Request, limit: int = Query(50, ge=1, le=500)) -> ListOut:
-    _get_scope(request)
-    items = await _use_case(request).evals(limit=limit)
+    scope = _get_scope(request)
+    items = await _use_case(request).evals(tenant_id=scope.tenant_id, limit=limit)
     return ListOut(items=list(items), count=len(items))
 
 
 @router.get("/observability/datasets", response_model=ListOut, summary="Curated datasets")
 async def get_datasets(request: Request) -> ListOut:
-    _get_scope(request)
-    items = await _use_case(request).datasets()
+    scope = _get_scope(request)
+    items = await _use_case(request).datasets(tenant_id=scope.tenant_id)
     return ListOut(items=list(items), count=len(items))
 
 

@@ -13,7 +13,10 @@ exporter (configured in ``observability/otel.py``) keeps buffering spans regardl
 traces are not lost when only the read/eval HTTP API is unavailable.
 
 The Phoenix *project* is selected by the OTLP ``service.name`` the exporter already sends,
-so the read-side ``project_identifier`` is simply ``otel_service_name``.
+so the read-side ``project_identifier`` is simply ``otel_service_name``. That project is
+**shared across all tenants**, so every read-side method filters to the caller's tenant —
+traces/evals by the ``tenant.id`` span attribute (fail-closed), datasets by a tenant-scoped
+name prefix — so the ``/observability`` routes never leak one tenant's data to another.
 """
 
 from __future__ import annotations
@@ -112,11 +115,12 @@ class PhoenixObservabilityAdapter(ObservabilityPort):
             logger.warning("record_eval failed (span=%s name=%s): %s", span_id, name, exc)
 
     async def curate_dataset(
-        self, *, dataset: str, examples: Sequence[Mapping[str, Any]]
+        self, *, tenant_id: str, dataset: str, examples: Sequence[Mapping[str, Any]]
     ) -> None:
         client = self._phoenix()
         if client is None or not examples:
             return
+        dataset = _tenant_dataset_name(tenant_id, dataset)
         # The phoenix client wants inputs/outputs/metadata as parallel iterables of mappings.
         # Convention: each example's "output"/"metadata" are split out; remaining keys are inputs.
         inputs: list[dict[str, Any]] = []
@@ -142,8 +146,12 @@ class PhoenixObservabilityAdapter(ObservabilityPort):
                 logger.warning("curate_dataset failed (%s): %s", dataset, exc)
 
     # --- read side -----------------------------------------------------------
+    # Phoenix uses one global project across all tenants, so every read here MUST filter to
+    # the caller's tenant. Spans carry the `tenant.id` attribute (stamped by chat, the agent
+    # runtime, and the MCP connector); we filter on it and fail CLOSED — a span with no
+    # matching tenant is excluded rather than leaked.
     async def get_traces(
-        self, *, limit: int = 50, session_id: str | None = None
+        self, *, tenant_id: str, limit: int = 50, session_id: str | None = None
     ) -> Sequence[Mapping[str, Any]]:
         client = self._phoenix()
         if client is None:
@@ -155,11 +163,14 @@ class PhoenixObservabilityAdapter(ObservabilityPort):
         except Exception as exc:
             logger.warning("get_traces failed: %s", exc)
             return []
+        spans = [s for s in spans if _attr(s, "tenant.id") == tenant_id]
         if session_id:
             spans = [s for s in spans if _attr(s, "session.id") == session_id]
         return list(spans)
 
-    async def get_evals(self, *, limit: int = 50) -> Sequence[Mapping[str, Any]]:
+    async def get_evals(
+        self, *, tenant_id: str, limit: int = 50
+    ) -> Sequence[Mapping[str, Any]]:
         client = self._phoenix()
         if client is None:
             return []
@@ -167,7 +178,12 @@ class PhoenixObservabilityAdapter(ObservabilityPort):
             spans = await client.spans.get_spans(
                 project_identifier=self._project, limit=limit
             )
-            span_ids = [sid for s in spans if (sid := _span_id(s))]
+            # Only annotate this tenant's spans — evals inherit the span's tenant scope.
+            span_ids = [
+                sid
+                for s in spans
+                if _attr(s, "tenant.id") == tenant_id and (sid := _span_id(s))
+            ]
             if not span_ids:
                 return []
             return list(
@@ -179,15 +195,24 @@ class PhoenixObservabilityAdapter(ObservabilityPort):
             logger.warning("get_evals failed: %s", exc)
             return []
 
-    async def get_datasets(self) -> Sequence[Mapping[str, Any]]:
+    async def get_datasets(self, *, tenant_id: str) -> Sequence[Mapping[str, Any]]:
         client = self._phoenix()
         if client is None:
             return []
         try:
-            return list(await client.datasets.list())
+            datasets = await client.datasets.list()
         except Exception as exc:
             logger.warning("get_datasets failed: %s", exc)
             return []
+        # Datasets are tenant-namespaced at curation (see _tenant_dataset_name); return only
+        # this tenant's, with the internal prefix stripped back to the logical name.
+        prefix = _tenant_dataset_name(tenant_id, "")
+        out: list[Mapping[str, Any]] = []
+        for d in datasets:
+            name = d.get("name") if isinstance(d, Mapping) else None
+            if isinstance(name, str) and name.startswith(prefix):
+                out.append({**d, "name": name[len(prefix):]})
+        return out
 
     async def drift_check(self, *, tenant_id: str | None = None) -> Mapping[str, Any]:
         if self._drift is None:
@@ -209,6 +234,15 @@ class PhoenixObservabilityAdapter(ObservabilityPort):
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("Phoenix client close failed: %s", exc)
             return
+
+
+def _tenant_dataset_name(tenant_id: str, dataset: str) -> str:
+    """Tenant-namespace a dataset identifier so curation and listing agree on ownership.
+
+    Deterministic and prefix-based: ``get_datasets`` filters by (and strips) this prefix,
+    keeping one tenant's curated examples invisible to another.
+    """
+    return f"t:{tenant_id}:{dataset}"
 
 
 def _attr(span: Mapping[str, Any], key: str) -> Any:

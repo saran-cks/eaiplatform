@@ -18,15 +18,17 @@ class GetObservabilityDataUseCase:
         self._obs = observability
 
     async def traces(
-        self, *, limit: int = 50, session_id: str | None = None
+        self, *, tenant_id: str, limit: int = 50, session_id: str | None = None
     ) -> Sequence[Mapping[str, Any]]:
-        return await self._obs.get_traces(limit=limit, session_id=session_id)
+        return await self._obs.get_traces(
+            tenant_id=tenant_id, limit=limit, session_id=session_id
+        )
 
-    async def evals(self, *, limit: int = 50) -> Sequence[Mapping[str, Any]]:
-        return await self._obs.get_evals(limit=limit)
+    async def evals(self, *, tenant_id: str, limit: int = 50) -> Sequence[Mapping[str, Any]]:
+        return await self._obs.get_evals(tenant_id=tenant_id, limit=limit)
 
-    async def datasets(self) -> Sequence[Mapping[str, Any]]:
-        return await self._obs.get_datasets()
+    async def datasets(self, *, tenant_id: str) -> Sequence[Mapping[str, Any]]:
+        return await self._obs.get_datasets(tenant_id=tenant_id)
 
     async def drift(self, *, tenant_id: str | None = None) -> Mapping[str, Any]:
         return await self._obs.drift_check(tenant_id=tenant_id)

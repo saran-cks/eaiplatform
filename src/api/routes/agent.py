@@ -20,6 +20,7 @@ from api.schemas.agent import (
     AgentRunRequest,
     ArtifactOut,
 )
+from core.use_cases.agent.interrupt_agent import InterruptAgentUseCase
 from core.use_cases.agent.manage_artifacts import ManageArtifactsUseCase
 from core.use_cases.agent.run_agent import RunAgentUseCase
 
@@ -135,17 +136,29 @@ async def run_agent(
     summary="Interrupt a running agent task cooperatively",
 )
 async def interrupt_agent(agent_session_id: str, request: Request) -> dict[str, str]:
-    """Flag the agent runner task to stop execution."""
-    _get_scope(request)  # Validate auth scope
+    """Flag the agent runner task to stop execution.
+
+    Auth alone is insufficient here: the cooperative-cancel signal keys purely off the
+    session id, so the use case must confirm the caller's tenant owns the session before
+    dispatching — otherwise any authenticated user could cancel any tenant's agent (a
+    cross-tenant DoS). A session the caller's tenant doesn't own is reported as 404.
+    """
+    scope = _get_scope(request)
     container = request.app.state.container
 
+    interrupt_uc = InterruptAgentUseCase(store=container.store, agent=container.agent)
     try:
-        await container.agent.interrupt(agent_session_id=agent_session_id)
+        interrupted = await interrupt_uc.execute(
+            agent_session_id=agent_session_id, scope=scope
+        )
     except Exception as exc:
         logger.error("Failed to interrupt agent task: %s", exc)
         raise HTTPException(
             status_code=500, detail="Failed to interrupt agent execution"
         ) from exc
+
+    if not interrupted:
+        raise HTTPException(status_code=404, detail="Agent session not found")
 
     return {"status": "interrupted"}
 

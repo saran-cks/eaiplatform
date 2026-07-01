@@ -16,9 +16,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from adapters.agent.langgraph_runner import AgentState, LangGraphRunner
-from core.domain.entities.session import AgentStatus
+from core.domain.entities.session import AgentSession, AgentStatus
 from core.domain.value_objects.guard_verdict import GuardVerdict
 from core.domain.value_objects.permission_scope import PermissionScope
+from core.use_cases.agent.interrupt_agent import InterruptAgentUseCase
 from core.use_cases.agent.run_agent import RunAgentUseCase
 
 
@@ -212,3 +213,53 @@ async def test_agent_run_lifecycle_interrupted():
         agent_session_id=agent_session_id,
         status=AgentStatus.INTERRUPTED,
     )
+
+
+# ---------------------------------------------------------------------------
+# 4. Interrupt ownership enforcement (cross-tenant DoS guard)
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_interrupt_owned_session_dispatches():
+    """A session owned by the caller's tenant is looked up scoped, then interrupted."""
+    store = AsyncMock()
+    agent = AsyncMock()
+    store.get_agent_session.return_value = AgentSession(
+        agent_session_id="agent-session-1",
+        session_id="chat-1",
+        tenant_id="tenant-1",
+    )
+
+    use_case = InterruptAgentUseCase(store=store, agent=agent)
+    scope = PermissionScope(tenant_id="tenant-1", subject_id="user-123")
+
+    result = await use_case.execute(agent_session_id="agent-session-1", scope=scope)
+
+    assert result is True
+    # Ownership resolved with the caller's tenant, not a model/route-supplied value.
+    store.get_agent_session.assert_awaited_once_with(
+        agent_session_id="agent-session-1", tenant_id="tenant-1"
+    )
+    agent.interrupt.assert_awaited_once_with(agent_session_id="agent-session-1")
+
+
+@pytest.mark.asyncio
+async def test_interrupt_foreign_tenant_is_denied():
+    """A session that the caller's tenant does not own must NOT be interrupted.
+
+    The tenant-scoped store lookup returns None for a cross-tenant id; the use case reports
+    False (route → 404) and never touches the runner — closing the cross-tenant DoS.
+    """
+    store = AsyncMock()
+    agent = AsyncMock()
+    store.get_agent_session.return_value = None  # not visible to this tenant
+
+    use_case = InterruptAgentUseCase(store=store, agent=agent)
+    scope = PermissionScope(tenant_id="attacker-tenant", subject_id="user-999")
+
+    result = await use_case.execute(agent_session_id="victim-session", scope=scope)
+
+    assert result is False
+    store.get_agent_session.assert_awaited_once_with(
+        agent_session_id="victim-session", tenant_id="attacker-tenant"
+    )
+    agent.interrupt.assert_not_awaited()

@@ -56,7 +56,9 @@ Append a new `## DD-N` to `docs/design-decisions.md` (next number, newest at bot
 made a real, cross-cutting architectural choice: a trade-off, a rejected alternative, a security-model
 stance, an invariant. Capture the *why* and an **Enforcement check** line (the test that holds it), per
 the existing DD-8…DD-17 style. **Do NOT** add a DD for routine implementation that just follows existing
-decisions — that belongs in the dev log. When unsure, it's probably a dev-log entry, not a DD.
+decisions — that belongs in the dev log. When unsure, it's probably a dev-log entry, not a DD.It is not a DD if it is just a local implementation choice, or if it is a decision that only affects one
+adapter or use-case. It is a DD if it is a decision that affects the architecture,
+the security model, or the invariants of the system. If you are unsure, err on the side of not creating a DD. It is better to have a dev log entry than to create.
 
 ### 5. Smoke test — write and/or verify when required
 A change "requires" a smoke test when correctness depends on a **real service** (sidecar, DB, network,
