@@ -82,12 +82,19 @@ pipeline passes offline. What's unverified is everything behind a port that need
 system. Run this once the real adapters land (Phase 3/4).
 
 ### What to verify
-1. **Contract holds against a real Qdrant.** Run the worker on a sample corpus, then have
-   the core-api retriever read the points back — `screened` / `injection_risk` / `permissions`
-   round-trip intact, and the collection has the `screened` + `injection_risk` payload
-   indexes (`contracts/qdrant_collection.json`).
-2. **Security gate with real clamd.** Feed the EICAR test file → quarantined, never parsed;
-   feed an extension/magic mismatch (e.g. `.pdf` that isn't `%PDF`) → `malformed`.
+1. **Contract holds against a real Qdrant** (sink adapter `adapters/sink/qdrant.py` built +
+   tested offline on `:memory:`, Session 5 — this verifies it against a real/clustered daemon).
+   Run the worker on a sample corpus, then have the core-api retriever read the points back —
+   `screened` / `injection_risk` / `permissions` round-trip intact, the collection has the
+   `screened` + `injection_risk` payload indexes (`contracts/qdrant_collection.json`), and the
+   **point id equals the payload `chunk_id` (a UUIDv5, DD-23)** — `retrieve(ids=[chunk_id])`
+   returns the point on a real server, not just `:memory:`.
+2. **Security gate with real clamd** (adapter `adapters/av_scanner/clamd.py` built offline,
+   Session 4/DD-22 — this verifies it against a real clamav daemon). Feed the EICAR test file →
+   quarantined (`infected`, signature populated), never parsed; feed an extension/magic mismatch
+   (e.g. `.pdf` that isn't `%PDF`) → `malformed`. **Fail-closed:** stop the clamav daemon and
+   ingest a file → item quarantined with `reason="scan_error"` (never passed through as clean),
+   and the batch keeps going rather than crashing.
 3. **Both guards at ingest.** A doc with an injection payload → chunk stored with high
    `injection_risk`, `screened=true` (stamped, NOT dropped). A genuinely abusive doc →
    quarantined. A doc with PII (email/SSN) → stored text redacted.

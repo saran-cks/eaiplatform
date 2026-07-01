@@ -107,3 +107,83 @@ untouched. Deliberately did **not** build the outbox (correctly deferred Phase-3
 2PC across the two stores (no usable cross-store atomic commit; operationally heavy).
 **Verification**: `python -m pytest ingestion_worker/tests -q` → **23 passed** (unchanged);
 worker ruff-clean.
+
+---
+
+## Session 4: first Phase-3 adapter — clamd AV scanner (Plan B: sync client via `to_thread`, fail-closed) — 2026-07-01
+**Target**: build the first concrete adapter behind a worker port — `AvScannerPort` → a clamd
+INSTREAM scanner — and its offline test coverage, without needing a live clamav daemon.
+**Steps Completed**:
+- **`adapters/av_scanner/clamd.py`** (the worker's first adapter, new `adapters/` package):
+  `ClamdScanner` implements `AvScannerPort.scan(bytes) -> ScanResult` by wrapping the
+  **synchronous** `clamd` client's INSTREAM command in `asyncio.to_thread`. `clamd` is imported
+  **lazily** inside the client factory so the module (and its mock tests) load without the
+  optional dep. Reply mapping: `{'stream': ('OK', None)}`→clean, `('FOUND', sig)`→infected+sig.
+- **Fail-closed** posture (DD-22): a non-verdict (daemon down, timeout, transport error, `ERROR`
+  status, garbled reply) raises **`AvScannerUnavailable`** — a new **port-level** exception
+  (`ports/av_scanner.py`, so a pipeline stage can catch it without importing an adapter). The
+  security gate now wraps the scan call and maps that to a `GateResult(reason="scan_error")`
+  quarantine instead of crashing the batch.
+- **Tests** (`test_av_scanner_clamd.py`, +9): Tier 1 mocks the client via an injected factory
+  (always runs, no lib/daemon) — OK/FOUND mapping, connection-error/ERROR/garbled all fail
+  closed, and the gate-quarantines-on-outage integration case. Tier 2 drives the **real** `clamd`
+  client against an **in-process asyncio TCP server** speaking the INSTREAM wire protocol
+  (`nINSTREAM\n` + 4-byte-length chunks → `stream: OK\n` / `... FOUND\n`) — real socket + framing
+  coverage; `skipif` the lib is absent.
+- Declared `clamd>=1.0.2` in the worker `pyproject.toml`.
+**Issues Faced & Resolved**:
+- **Tier-2 tests skipped on first run** — the worker shares the **root** uv env for `uv run
+  python -m pytest` (per CLAUDE.md), and `clamd` was only added to the *worker's* pyproject;
+  installed it into the active env (`uv pip install clamd`) and the 3 socket tests then ran.
+- **mypy `import-untyped` + `no-any-return`** — `clamd` ships no stubs. Added
+  `# type: ignore[import-untyped]` on the lazy import and assigned through a typed local
+  (`client: _ClamdClient = …`) so the factory doesn't return `Any`.
+- **clamd wire detail** — the sync client sends `n`-prefixed commands and reads the reply with
+  `readline()`, so the fake server must answer **newline-terminated** (`stream: OK\n`), not
+  null-terminated; getting this right is what makes Tier 2 exercise the true path.
+**Verification**: `python -m pytest ingestion_worker/tests -q` → **32 passed** (was 23; +9,
+0 skipped with `clamd` installed). `ruff check` clean; `mypy` clean on the changed files.
+**Deferred**: live scan against a real clamav daemon + real EICAR file stays **ST-2** (needs a
+running daemon with freshclam signatures + ~1 GB RAM — a resource constraint on this box, not a
+cloud/creds one). DI wiring of `ClamdScanner` into the pipeline lands with the rest of the
+Phase-3 adapters (a worker-local wiring module, per the build plan).
+
+---
+
+## Session 5: Phase-3 `VectorSinkPort` — Qdrant writer + a latent chunk-id contract bug (DD-23) — 2026-07-01
+**Target**: build the Qdrant writer behind `VectorSinkPort` and test it fully offline against
+`qdrant-client`'s in-memory engine (no daemon).
+**Steps Completed**:
+- **`adapters/sink/qdrant.py`** — `QdrantVectorSink` implements `upsert`/`delete` on
+  `AsyncQdrantClient`. Point id = `chunk_id`; named `dense` + `sparse` vectors (sparse attached
+  only when the embedder produced one); payload from `Chunk.to_payload()`. Lazily bootstraps the
+  shared collection to `contracts/qdrant_collection.json` (dense Cosine @ `embed_dim`, on-disk
+  sparse, the 4 payload indexes) if missing. **`wait=True`** on every write per the DD-20
+  addendum (single-node read-your-writes → the Qdrant-first/registry-second ordering stays
+  self-healing). Constructor takes an optional injected `client` so the whole adapter runs
+  offline against a `:memory:` engine.
+- **Fixed a latent contract bug (DD-23).** `chunk_id` doubles as the Qdrant point id, but Qdrant
+  rejects a raw sha256 hex ("not a valid UUID"). Changed `identity.chunk_id()` to a deterministic
+  **UUIDv5** over the same canonical tuple; updated `contracts/chunk_identity.md`. Same-value
+  invariant preserved → **no core-api retriever change**, no payload-schema change.
+- **Tests** (`test_sink_qdrant.py`, +6, all on `:memory:`): bootstrap+write, idempotent overwrite
+  by `chunk_id` (count stays 1, latest text wins), delete-by-id, sparse-optional, empty-batch
+  no-op (no collection created), named-vector config matches the contract. Plus
+  `test_identity.py::test_chunk_id_is_a_valid_uuid` (+1) locking the UUID property.
+**Issues Faced & Resolved**:
+- **`/tmp` path probe swallowed output** — a throwaway probe script under git-bash `/tmp` ran via
+  Windows `uv run python` resolved to a *different* `C:/tmp`, so output vanished. Moved the probe
+  to the session scratchpad with a full Windows path; it then reproduced the `is not a valid UUID`
+  rejection cleanly — which is what drove DD-23.
+- **mypy dict-invariance at the qdrant boundary** — the named-vector map (`{"dense": [...],
+  "sparse": SparseVector}`) failed `PointStruct(vector=…)`'s broad invariant union. Typed the
+  local as `dict[str, Any]` (an external-lib boundary), keeping the rest strict.
+- **Benign local-Qdrant warning** — "Payload indexes have no effect in the local Qdrant." Expected:
+  `:memory:` mode ignores payload indexes but the bootstrap calls still succeed; the real server
+  honors them. Left as-is (the warning confirms the offline test exercises the real bootstrap).
+**Verification**: `python -m pytest ingestion_worker/tests -q` → **39 passed** (was 32; +7).
+`src/tests/test_contract_qdrant.py` → **7 passed** (identity change didn't disturb the
+cross-service contract). `ruff` + `mypy` clean on the changed files.
+**Deferred**: live verification against a real (ideally clustered) Qdrant — round-trip through the
+core-api retriever, crash-mid-dual-write self-heal, multi-node `consistency`/`ordering` — stays
+**ST-2**. DI wiring lands with the other Phase-3 adapters.

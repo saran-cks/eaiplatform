@@ -10,9 +10,10 @@ dependencies = [
     "qdrant-client>=1.12",
     "asyncpg>=0.30",
     "arq>=0.26",
-    # Worker-owned embedder + parsers are added as their adapters land:
+    "clamd>=1.0.2",
+    # Remaining worker-owned adapters add their deps as they land:
     #   FlagEmbedding/transformers (bge-m3), pypdf, python-docx, tree-sitter,
-    #   presidio-analyzer, clamd, boto3. Kept out until Phase 3/4 so Phase 0-2 stays light.
+    #   presidio-analyzer, boto3. Kept out until Phase 3/4 so the earlier phases stay light.
 ]
 
 [dependency-groups]

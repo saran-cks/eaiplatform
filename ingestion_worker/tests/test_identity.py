@@ -7,7 +7,15 @@ delta/dedup + dual-write logic, so they get a direct test, not just pipeline cov
 
 from __future__ import annotations
 
+import uuid
+
 from ingestion_worker.identity import chunk_id, content_hash
+
+
+def test_chunk_id_is_a_valid_uuid():
+    """chunk_id doubles as the Qdrant point id, which must be a UUID (DD-23)."""
+    cid = chunk_id(source="servicenow", native_id="INC1", field_role="body", seq=0)
+    assert str(uuid.UUID(cid)) == cid  # parses cleanly and round-trips
 
 
 def test_chunk_id_is_deterministic():

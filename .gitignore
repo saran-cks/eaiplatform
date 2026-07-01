@@ -153,5 +153,6 @@ archive.md
 # Claude Code — keep personal/local config out of git; share skills + team hooks
 .claude/settings.local.json
 
-# status 
+# status
 temp-status.md
+*.local.md

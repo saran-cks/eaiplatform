@@ -4,11 +4,21 @@ The Qdrant point id and payload `chunk_id` are the **same value**, derived
 deterministically so that re-ingesting an unchanged source is **idempotent** (the
 upsert overwrites the same point) and a changed chunk lands on a stable id.
 
+`chunk_id` is a **UUIDv5**, not a raw sha256 hex: it doubles as the Qdrant point id, and
+Qdrant only accepts unsigned-integer or UUID point ids (a 64-char sha256 hex is rejected
+as "not a valid UUID"). UUIDv5 over the canonical tuple preserves every property the hash
+gave us — deterministic, no timestamps/randomness, unit-separator collision-safety — while
+being a legal point id, so the same-value invariant above holds. See DD-23.
+
 ## Formula
 
 ```
-chunk_id = sha256( "{source}\x1f{native_id}\x1f{field_role}\x1f{seq}" ).hexdigest()
+chunk_id = uuidv5( namespace = uuid5(NAMESPACE_URL, "eaiplatform/contracts/chunk_id"),
+                   name      = "{source}\x1f{native_id}\x1f{field_role}\x1f{seq}" )
 ```
+
+`content_hash` (below, delta/dedup) remains a **sha256 hexdigest** — it is a content
+fingerprint, not an id, and never touches Qdrant's point-id validation.
 
 - `source` — connector/source system identifier (e.g. `servicenow`, `github`).
 - `native_id` — the source's own id for the parent record/document.

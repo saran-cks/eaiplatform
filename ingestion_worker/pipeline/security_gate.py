@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ingestion_worker.domain.document import RawItem
-from ingestion_worker.ports.av_scanner import AvScannerPort
+from ingestion_worker.ports.av_scanner import AvScannerPort, AvScannerUnavailable
 
 # Declared content-type -> required leading magic bytes. Text-like types (txt/csv/json/
 # code) have no reliable magic and are skipped here.
@@ -32,7 +32,7 @@ _DEFAULT_MAX_BYTES = 25 * 1024 * 1024  # 25 MiB
 @dataclass(frozen=True, slots=True)
 class GateResult:
     ok: bool
-    reason: str | None = None  # "malformed" | "oversize" | "infected"
+    reason: str | None = None  # "malformed" | "oversize" | "infected" | "scan_error"
     detail: str = ""
 
 
@@ -65,7 +65,11 @@ class SecurityGate:
         static = static_checks(item, max_bytes=self._max_bytes)
         if not static.ok:
             return static
-        scan = await self._av.scan(item.raw)
+        try:
+            scan = await self._av.scan(item.raw)
+        except AvScannerUnavailable as exc:
+            # Fail-closed: an unreachable/erroring scanner must never pass as "clean".
+            return GateResult(ok=False, reason="scan_error", detail=str(exc))
         if not scan.clean:
             return GateResult(ok=False, reason="infected", detail=scan.signature or "")
         return GateResult(ok=True)
