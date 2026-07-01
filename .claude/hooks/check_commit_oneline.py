@@ -16,14 +16,21 @@ import sys
 
 
 def is_git_commit(tokens: list[str]) -> bool:
-    """True if any `git ... commit` invocation appears in the token stream."""
+    """True if any `git ... commit` invocation appears in the token stream.
+
+    Scans EVERY `git` occurrence, not just the first — so a compound command like
+    `git add X && git commit -m …` is still recognized as a commit (the leading
+    `git add` no longer short-circuits the check).
+    """
     for i, tok in enumerate(tokens):
         if tok != "git":
             continue
         for nxt in tokens[i + 1:]:
             if nxt.startswith("-"):
                 continue  # tolerate global flags before the subcommand
-            return nxt == "commit"
+            if nxt == "commit":
+                return True
+            break  # this git's subcommand isn't commit; move on to the next git
     return False
 
 
